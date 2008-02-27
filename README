@@ -1,0 +1,27 @@
+Paranoid
+========
+
+  The Paranoid::* series of modules are intended enforce safer programming by
+providing functions that perform more sanity checks as well as enforcing taint
+mode.  Over time I'll add more of my safety hacks to these modules.
+  Please see PODs for applicable documentation.  The following PODs are
+available:
+
+    Paranoid
+    Paranoid::BerkeleyDB
+    Paranoid::Debug
+    Paranoid::Filesystem
+    Paranoid::Input
+    Paranoid::Lockfile
+    Paranoid::Log
+    Paranoid::Log::Buffer
+    Paranoid::Log::Email
+    Paranoid::Log::File
+    Paranoid::Log::Syslog
+    Paranoid::Log::Template
+    Paranoid::Module
+    Paranoid::Network
+    Paranoid::Process
+
+  Please send bugs, requests, and flames to Arthur Corliss
+<corliss@digitalmages.com>.
