@@ -13,6 +13,7 @@ if (loadModule("Paranoid::Log::Syslog")) {
   print "1..2\n";
 } else {
   print "1..1\nok 1\n";
+  warn "Unix::Syslog not available -- skipping all tests...\n";
   exit 0;
 }
 

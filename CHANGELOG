@@ -1,0 +1,10 @@
+CHANGELOG
+
+v0.16  (2008/02/27)
+===================
+--Fixed conditional tests
+--Added new function to Paranoid::Debug (psetDebug)
+
+v0.15  (2008/02/26)
+===================
+--Initial public release

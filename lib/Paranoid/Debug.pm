@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Debug.pm,v 0.7 2008/01/23 06:48:04 acorliss Exp $
+# $Id: Debug.pm,v 0.8 2008/02/27 17:57:52 acorliss Exp $
 #
 #    This program is free software; you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -26,7 +26,7 @@ Paraniod::Debug - Trace message support for paranoid programs
 
 =head1 MODULE VERSION
 
-$Id: Debug.pm,v 0.7 2008/01/23 06:48:04 acorliss Exp $
+$Id: Debug.pm,v 0.8 2008/02/27 17:57:52 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -44,6 +44,8 @@ $Id: Debug.pm,v 0.7 2008/01/23 06:48:04 acorliss Exp $
   }
 
   perror("error msg");
+
+  psetDebug(@ARGV);
 
 =head1 REQUIREMENTS
 
@@ -85,13 +87,13 @@ use vars qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS);
 use Exporter;
 use Paranoid;
 
-($VERSION)    = (q$Revision: 0.7 $ =~ /(\d+(?:\.(\d+))+)/);
+($VERSION)    = (q$Revision: 0.8 $ =~ /(\d+(?:\.(\d+))+)/);
 
 @ISA          = qw(Exporter);
-@EXPORT       = qw(PDEBUG pdebug perror pIn pOut);
-@EXPORT_OK    = qw(PDEBUG pdebug perror pIn pOut);
+@EXPORT       = qw(PDEBUG pdebug perror pIn pOut psetDebug);
+@EXPORT_OK    = qw(PDEBUG pdebug perror pIn pOut psetDebug);
 %EXPORT_TAGS  = (
-  all => [qw(PDEBUG pdebug perror pIn pOut)],
+  all => [qw(PDEBUG pdebug perror pIn pOut psetDebug)],
   );
 
 #####################################################################
@@ -218,6 +220,30 @@ less space.
 sub pOut () {
   my $i = ILEVEL;
   ILEVEL = --$i;
+}
+
+=head2 psetDebug
+
+  psetDebug(@ARGV);
+
+This function extracts all ^-v+$ arguments from the passed list and counts the
+number of 'v's that result, and sets B<PDEBUG> to that count.  You would
+typically use this by passing @ARGV for command-line programs.
+
+=cut
+
+sub psetDebug (@) {
+  my @args = @_;
+  my $v;
+
+  # Extract all ^-v+$ arguments
+  $v = join('', grep(/^-v+$/, @args));
+  $v =~ s/-//g;
+
+  # Set debug level
+  PDEBUG = length($v);
+
+  return length($v);
 }
 
 1;
