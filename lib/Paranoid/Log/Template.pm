@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Template.pm,v 0.3 2008/02/27 06:51:08 acorliss Exp $
+# $Id: Template.pm,v 0.4 2008/02/28 19:26:49 acorliss Exp $
 #
 #    This program is free software; you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -26,7 +26,7 @@ Paraniod::Log::Template - Log Facility Template
 
 =head1 MODULE VERSION
 
-$Id: Template.pm,v 0.3 2008/02/27 06:51:08 acorliss Exp $
+$Id: Template.pm,v 0.4 2008/02/28 19:26:49 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -70,7 +70,7 @@ use vars qw($VERSION);
 use Paranoid::Debug;
 use Carp;
 
-($VERSION)    = (q$Revision: 0.3 $ =~ /(\d+(?:\.(\d+))+)/);
+($VERSION)    = (q$Revision: 0.4 $ =~ /(\d+(?:\.(\d+))+)/);
 
 #####################################################################
 #
@@ -146,7 +146,7 @@ sub log($$$$$$$;@) {
 
   @entries = dump($name);
 
-This is currently only useful for ring buffers, in which case it dumps the
+This is currently only useful for log buffers, in which case it dumps the
 current contents of the buffer into an array and returns it.  All facilities
 that do not support this should simply return an empty list.
 

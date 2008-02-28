@@ -1,5 +1,12 @@
 CHANGELOG
 
+v0.17  (2008/02/28)
+===================
+--Made more tests conditional to account for more types of
+  system configurations
+--Made error checking more explicit for e-mail logging, and storing
+  those errors in Paranoid::ERROR
+
 v0.16  (2008/02/27)
 ===================
 --Fixed conditional tests

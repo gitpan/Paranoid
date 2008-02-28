@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Buffer.pm,v 0.4 2008/02/27 06:53:00 acorliss Exp $
+# $Id: Buffer.pm,v 0.5 2008/02/28 19:26:49 acorliss Exp $
 #
 #    This program is free software; you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -26,7 +26,7 @@ Paraniod::Log::Buffer - Log Buffer Functions
 
 =head1 MODULE VERSION
 
-$Id: Buffer.pm,v 0.4 2008/02/27 06:53:00 acorliss Exp $
+$Id: Buffer.pm,v 0.5 2008/02/28 19:26:49 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -60,11 +60,11 @@ used directly.  B<Paranoid::Log> should be your exclusive interface for
 logging.
 
 When enabling a buffer facility with B<Paranoid::Log> you can add one integral
-argument to the call.  That number defines the size of the ring buffer in
+argument to the call.  That number defines the size of the log buffer in
 terms of number of entries allowed.
 
 B<NOTE:> Buffers are maintained within process memory.  If you fork
-a process from a parent with a ring buffer each copy will maintain its own
+a process from a parent with a log buffer each copy will maintain its own
 entries.
 
 =cut
@@ -83,7 +83,7 @@ use vars qw($VERSION);
 use Paranoid::Debug;
 use Carp;
 
-($VERSION)    = (q$Revision: 0.4 $ =~ /(\d+(?:\.(\d+))+)/);
+($VERSION)    = (q$Revision: 0.5 $ =~ /(\d+(?:\.(\d+))+)/);
 
 #####################################################################
 #
@@ -128,7 +128,7 @@ use Carp;
 
   $rv = init();
 
-For the purposes of this module this function only deletes all ring buffers.
+For the purposes of this module this function only deletes all log buffers.
 
 =cut
 

@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Paranoid.pm,v 0.16 2008/02/27 17:56:12 acorliss Exp $
+# $Id: Paranoid.pm,v 0.17 2008/02/28 19:29:32 acorliss Exp $
 #
 #    This program is free software; you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -26,7 +26,7 @@ Paranoid - Paranoia support for safer programs
 
 =head1 MODULE VERSION
 
-$Id: Paranoid.pm,v 0.16 2008/02/27 17:56:12 acorliss Exp $
+$Id: Paranoid.pm,v 0.17 2008/02/28 19:29:32 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -91,7 +91,7 @@ use warnings;
 use vars qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS);
 use Exporter;
 
-($VERSION)    = (q$Revision: 0.16 $ =~ /(\d+(?:\.(\d+))+)/);
+($VERSION)    = (q$Revision: 0.17 $ =~ /(\d+(?:\.(\d+))+)/);
 
 @ISA          = qw(Exporter);
 @EXPORT       = qw(psecureEnv);

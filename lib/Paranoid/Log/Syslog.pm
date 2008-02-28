@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Syslog.pm,v 0.3 2008/02/27 06:51:48 acorliss Exp $
+# $Id: Syslog.pm,v 0.4 2008/02/28 19:26:49 acorliss Exp $
 #
 #    This program is free software; you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -26,7 +26,7 @@ Paraniod::Log::Syslog - Log Facility Syslog
 
 =head1 MODULE VERSION
 
-$Id: Syslog.pm,v 0.3 2008/02/27 06:51:48 acorliss Exp $
+$Id: Syslog.pm,v 0.4 2008/02/28 19:26:49 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -67,7 +67,7 @@ use Paranoid::Debug;
 use Unix::Syslog qw(:macros :subs);
 use Carp;
 
-($VERSION)    = (q$Revision: 0.3 $ =~ /(\d+(?:\.(\d+))+)/);
+($VERSION)    = (q$Revision: 0.4 $ =~ /(\d+(?:\.(\d+))+)/);
 
 #####################################################################
 #
@@ -259,15 +259,8 @@ sub log($$$$$$$) {
   return $rv;
 }
 
-=head2 dump
-
-  @entries = dump();
-
-In context of this module this function does nothing.
-
-=cut
-
 sub dump() {
+  # This function is present only for compliance.
   return ();
 }
 

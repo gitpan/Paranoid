@@ -1,18 +1,43 @@
 # 11_switchUser.t
 
 use Paranoid::Process qw(:all);
+use Paranoid::Input;
+FSZLIMIT = 512 * 1024;
 #use Paranoid::Debug;
 #PDEBUG = 20;
 
 $|++;
-print "1..7\n";
 
 my $test = 1;
 my ($rv, $id);
+my (@passwd, $user1, $user2, $uid1, $uid2);
+my (@group, $group1, $group2, $gid1, $gid2);
+
+# Prep:  get two valid users & groups to test with
+#
+# NOTE:  we use user1/group1 to test translation functions (they
+#        will probably be root/root|wheel) and user2/group2 to test
+#        user switch functions (they will hopefully be unprivileged 
+#        users)
+if (slurp('/etc/passwd', \@passwd, 1) && @passwd &&
+  slurp('/etc/group', \@group, 1) && @group) {
+  print "1..7\n";
+
+  ($user1, $uid1)  = (split(/:/, $passwd[0]))[0,2];
+  ($user2, $uid2)  = (split(/:/, $passwd[$#passwd]))[0,2];
+  ($group1, $gid1) = (split(/:/, $group[0]))[0,2];
+  ($group2, $gid2) = (split(/:/, $group[$#group]))[0,2];
+
+} else {
+  print "1..1\nok 1\n";
+  warn "Couldn't find any valid /etc/passwd|group entries to test with -- " .
+    "skipping\n";
+  exit 0;
+}
 
 # 1 - 2 test ptranslateUser
-$id = ptranslateUser('root');
-$rv = (defined $id && $id == 0) ? 1 : 0;
+$id = ptranslateUser($user1);
+$rv = (defined $id && $id == $uid1) ? 1 : 0;
 $rv ? print "ok $test\n" : print "not ok $test\n";
 $test++;
 $id = ptranslateUser('no freaking way:::!');
@@ -21,8 +46,8 @@ $rv ? print "ok $test\n" : print "not ok $test\n";
 $test++;
 
 # 3 - 4 test ptranslateGroup
-$id = ptranslateGroup('root');
-$rv = (defined $id && $id == 0) ? 1 : 0;
+$id = ptranslateGroup($group1);
+$rv = (defined $id && $id == $gid1) ? 1 : 0;
 $rv ? print "ok $test\n" : print "not ok $test\n";
 $test++;
 $id = ptranslateGroup('no freaking way:::!');
@@ -30,18 +55,21 @@ $rv = ! defined $id ? 1 : 0;
 $rv ? print "ok $test\n" : print "not ok $test\n";
 $test++;
 
+# NOTE:  The following tests will be skipped for non-root users
+
 # 5 test switching just named user
 if ($< == 0) {
   if ($pid = fork) {
     waitpid $pid, 0;
     $rv = ! $?;
   } else {
-    $rv = switchUser("nobody");
+    $rv = switchUser($user2);
     exit ! $rv;
   }
   $rv ? print "ok $test\n" : print "not ok $test\n";
 } else {
   print "ok $test\n";
+  warn "Skipping remaining tests since test run by non-root user\n";
 }
 $test++;
 
@@ -51,7 +79,7 @@ if ($< == 0) {
     waitpid $pid, 0;
     $rv = ! $?;
   } else {
-    $rv = switchUser(undef, "nobody") || switchUser(undef, "nogroup");
+    $rv = switchUser(undef, $group2);
     exit ! $rv;
   }
   $rv ? print "ok $test\n" : print "not ok $test\n";
@@ -66,7 +94,7 @@ if ($< == 0) {
     waitpid $pid, 0;
     $rv = ! $?;
   } else {
-    $rv = switchUser("nobody", "nobody") || switchUser("nobody", "nogroup");
+    $rv = switchUser($user2, $group2);
     exit ! $rv;
   }
   $rv ? print "ok $test\n" : print "not ok $test\n";

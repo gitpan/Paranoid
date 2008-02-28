@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Email.pm,v 0.1 2008/02/27 06:30:17 acorliss Exp $
+# $Id: Email.pm,v 0.3 2008/02/28 19:26:49 acorliss Exp $
 #
 #    This program is free software; you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -26,7 +26,7 @@ Paraniod::Log::Email - Log Facility Email
 
 =head1 MODULE VERSION
 
-$Id: Email.pm,v 0.1 2008/02/27 06:30:17 acorliss Exp $
+$Id: Email.pm,v 0.3 2008/02/28 19:26:49 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -72,7 +72,7 @@ use Carp;
 use Net::SMTP;
 use Net::Domain qw(hostfqdn);
 
-($VERSION)    = (q$Revision: 0.1 $ =~ /(\d+(?:\.(\d+))+)/);
+($VERSION)    = (q$Revision: 0.3 $ =~ /(\d+(?:\.(\d+))+)/);
 
 #####################################################################
 #
@@ -117,7 +117,9 @@ sub remove($) {
             $mailhost, $recipient, $sender, $subject);
 
 This function adds another log message to the log file.  This is 
-not meant to be used directly.  Please use the B<Paranoid::Log> module.
+not meant to be used directly.  Please use the B<Paranoid::Log> module.  Any
+errors which occur during the e-mail transaction are stored in
+B<Paranoid::ERROR>.
 
 =cut
 
@@ -183,17 +185,26 @@ __EOF__
 
         # Send to all recipients
         if (ref($recipient) eq 'ARRAY') {
-          foreach (@$recipient) { $smtp->to($recipient) };
+          foreach (@$recipient) { 
+            Paranoid::ERROR = pdebug("server rejected recipient: $_", 9)
+             unless $smtp->to($_) };
         } else {
-          $smtp->to($recipient);
+          Paranoid::ERROR = pdebug("server rejected recipient: $recipient", 9)
+            unless $smtp->to($recipient);
         }
 
         # Send the message
         $rv = $smtp->data($data);
+
+      # Log the error
+      } else {
+        Paranoid::ERROR = pdebug("server rejected sender: $sender", 9);
       }
 
       # Close the connection
       $smtp->quit;
+    } else {
+      Paranoid::ERROR = pdebug("couldn't connect to server: $mailhost", 9);
     }
   }
 
@@ -203,17 +214,8 @@ __EOF__
   return $rv;
 }
 
-=head2 dump
-
-  @entries = dump($name);
-
-This is currently only useful for ring buffers, in which case it dumps the
-current contents of the buffer into an array and returns it.  All facilities
-that do not support this should simply return an empty list.
-
-=cut
-
 sub dump($) {
+  # This function is present only for compliance.
   my $name    = shift;
 
   return ();
