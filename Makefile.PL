@@ -29,7 +29,7 @@ __EOF__
 # Create the makefile
 WriteMakefile(
   NAME            => 'Paranoid',
-  ABSTRACT        => 'Paranioa support for safer programs',
+  ABSTRACT        => 'General function library for safer, more secure programming',
   AUTHOR          => 'Arthur Corliss <corliss@digitalmages.com>',
   VERSION_FROM    => 'lib/Paranoid.pm',
   PREREQ_PM       => {},

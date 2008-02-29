@@ -9,7 +9,7 @@ FSZLIMIT = 512 * 1024;
 $|++;
 
 my $test = 1;
-my ($rv, $id);
+my ($rv, $id, @tmp, $i);
 my (@passwd, $user1, $user2, $uid1, $uid2);
 my (@group, $group1, $group2, $gid1, $gid2);
 
@@ -22,6 +22,14 @@ my (@group, $group1, $group2, $gid1, $gid2);
 if (slurp('/etc/passwd', \@passwd, 1) && @passwd &&
   slurp('/etc/group', \@group, 1) && @group) {
   print "1..7\n";
+
+  # Prune any comment lines (&*^@#4 FreeBSD!?)
+  for ($i = 0 ; $i <= $#passwd ; $i++) {
+    splice(@passwd, $i, 1) and $i-- if $passwd[$i] =~ /^\s*(?:#.*)?$/;
+  }
+  for ($i = 0 ; $i <= $#group ; $i++) {
+    splice(@group, $i, 1) and $i-- if $group[$i] =~ /^\s*(?:#.*)?$/;
+  }
 
   ($user1, $uid1)  = (split(/:/, $passwd[0]))[0,2];
   ($user2, $uid2)  = (split(/:/, $passwd[$#passwd]))[0,2];

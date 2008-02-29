@@ -1,7 +1,7 @@
 --- #YAML:1.0
 name:                Paranoid
-version:             0.17
-abstract:            Paranioa support for safer programs
+version:             0.18
+abstract:            General function library for safer, more secure programming
 license:             ~
 generated_by:        ExtUtils::MakeMaker version 6.36
 distribution_type:   module

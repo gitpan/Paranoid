@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Email.pm,v 0.3 2008/02/28 19:26:49 acorliss Exp $
+# $Id: Email.pm,v 0.4 2008/02/29 20:45:28 acorliss Exp $
 #
 #    This program is free software; you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -26,7 +26,7 @@ Paraniod::Log::Email - Log Facility Email
 
 =head1 MODULE VERSION
 
-$Id: Email.pm,v 0.3 2008/02/28 19:26:49 acorliss Exp $
+$Id: Email.pm,v 0.4 2008/02/29 20:45:28 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -72,7 +72,7 @@ use Carp;
 use Net::SMTP;
 use Net::Domain qw(hostfqdn);
 
-($VERSION)    = (q$Revision: 0.3 $ =~ /(\d+(?:\.(\d+))+)/);
+($VERSION)    = (q$Revision: 0.4 $ =~ /(\d+(?:\.(\d+))+)/);
 
 #####################################################################
 #
@@ -163,7 +163,7 @@ sub log($$$$$$$$$;$$) {
 
     # Compose the data block
     $data = << "__EOF__";
-To:      $recipient
+To:      @{[ ref($recipient) eq 'ARRAY' ? join(', ', @$recipient) : $recipient ]}
 From:    $sender
 Subject: $subject
 

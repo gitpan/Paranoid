@@ -1,5 +1,10 @@
 CHANGELOG
 
+v0.18  (2008/02/29)
+===================
+--Fixed mail headers for Email module when there are multiple recipients
+--Fixed tests to account for FreeBSD's comments in /etc/passwd, /etc/group
+
 v0.17  (2008/02/28)
 ===================
 --Made more tests conditional to account for more types of
