@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: File.pm,v 0.5 2008/02/27 06:52:08 acorliss Exp $
+# $Id: File.pm,v 0.7 2008/08/28 06:39:40 acorliss Exp $
 #
 #    This program is free software; you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -22,11 +22,11 @@
 
 =head1 NAME
 
-Paraniod::Log::File - File Logging Functions
+Paranoid::Log::File - File Logging Functions
 
 =head1 MODULE VERSION
 
-$Id: File.pm,v 0.5 2008/02/27 06:52:08 acorliss Exp $
+$Id: File.pm,v 0.7 2008/08/28 06:39:40 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -40,9 +40,21 @@ $Id: File.pm,v 0.5 2008/02/27 06:52:08 acorliss Exp $
 
 =head1 REQUIREMENTS
 
+=over
+
+=item o
+
 Fcntl
+
+=item o
+
 Paranoid::Debug
+
+=item o
+
 Paranoid::Filesystem
+
+=back
 
 =head1 DESCRIPTION
 
@@ -68,10 +80,11 @@ use warnings;
 use vars qw($VERSION);
 use Paranoid::Debug;
 use Paranoid::Filesystem;
+use Paranoid::Input;
 use Carp;
 use Fcntl qw(:flock :seek O_WRONLY O_CREAT O_APPEND);
 
-($VERSION)    = (q$Revision: 0.5 $ =~ /(\d+(?:\.(\d+))+)/);
+($VERSION)    = (q$Revision: 0.7 $ =~ /(\d+(?:\.(\d+))+)/);
 
 #####################################################################
 #
@@ -96,7 +109,7 @@ use Fcntl qw(:flock :seek O_WRONLY O_CREAT O_APPEND);
     # Usage:  $fh = _getHandle($filename);
 
     my $filename    = shift;
-    my ($fd, $rv);
+    my ($f, $fd, $rv);
 
     if (exists $fhandles{$filename}) {
       if ($fpids{$filename} == $$) {
@@ -106,10 +119,14 @@ use Fcntl qw(:flock :seek O_WRONLY O_CREAT O_APPEND);
         $rv = _getHandle($filename);
       }
     } else {
-      if (sysopen($fd, $filename, O_WRONLY | O_APPEND | O_CREAT)) {
-        $fhandles{$filename} = $fd;
-        $fpids{$filename}    = $$;
-        $rv = $fd;
+      if (detaint($filename, 'filename', \$f)) {
+        if (sysopen($fd, $f, O_WRONLY | O_APPEND | O_CREAT)) {
+          $fhandles{$f} = $fd;
+          $fpids{$f}    = $$;
+          $rv = $fd;
+        }
+      } else {
+        Paranoid::ERROR = pdebug("failed to detaint filename: $filename", 10);
       }
     }
 
@@ -184,14 +201,14 @@ sub log($$$$$$$$) {
   my $level     = shift;
   my $scope     = shift;
   my $filename  = shift;
-  my $farg      = defined $filename ? $filename : 'undef';
   my $rv        = 0;
   my $fh;
 
   # Validate arguments
-  croak "Invalid message passed to File::log" unless defined $message;
-  croak "Invalid filename passed to File::log: $farg" unless 
-    defined $filename;
+  croak "Mandatory third argument must be a valid message" unless defined
+    $message;
+  croak "Mandatory eighth argument must be a valid filename" unless defined
+    $filename;
 
   pdebug("entering w/($msgtime)($severity)($message)($name)" .
     "($facility)($level)($scope)($filename)", 9);

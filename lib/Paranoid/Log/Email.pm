@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Email.pm,v 0.4 2008/02/29 20:45:28 acorliss Exp $
+# $Id: Email.pm,v 0.6 2008/08/28 06:39:53 acorliss Exp $
 #
 #    This program is free software; you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -22,11 +22,11 @@
 
 =head1 NAME
 
-Paraniod::Log::Email - Log Facility Email
+Paranoid::Log::Email - Log Facility Email
 
 =head1 MODULE VERSION
 
-$Id: Email.pm,v 0.4 2008/02/29 20:45:28 acorliss Exp $
+$Id: Email.pm,v 0.6 2008/08/28 06:39:53 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -40,9 +40,17 @@ $Id: Email.pm,v 0.4 2008/02/29 20:45:28 acorliss Exp $
 
 =head1 REQUIREMENTS
 
+=over
+
+=item o
+
 Paranoid::Debug
 
+=item o
+
 Net::SMTP
+
+=back
 
 =head1 DESCRIPTION
 
@@ -72,7 +80,7 @@ use Carp;
 use Net::SMTP;
 use Net::Domain qw(hostfqdn);
 
-($VERSION)    = (q$Revision: 0.4 $ =~ /(\d+(?:\.(\d+))+)/);
+($VERSION)    = (q$Revision: 0.6 $ =~ /(\d+(?:\.(\d+))+)/);
 
 #####################################################################
 #
@@ -143,7 +151,8 @@ sub log($$$$$$$$$;$$) {
   my ($smtp, $hostname, $data);
 
   # Validate arguments
-  croak "Invalid message passed to Email::log()" unless defined $message;
+  croak "Mandatory third argument must be a valid message" unless defined
+    $message;
 
   pdebug("entering w/($msgtime)($severity)($message)($name)" .
     "($facility)($level)($scope)($m)($r)($s1)($s2)", 9);

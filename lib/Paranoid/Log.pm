@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Log.pm,v 0.9 2008/02/27 06:49:23 acorliss Exp $
+# $Id: Log.pm,v 0.11 2008/08/28 06:36:44 acorliss Exp $
 #
 #    This program is free software; you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -22,11 +22,11 @@
 
 =head1 NAME
 
-Paraniod::Log - Log Functions
+Paranoid::Log - Log Functions
 
 =head1 MODULE VERSION
 
-$Id: Log.pm,v 0.9 2008/02/27 06:49:23 acorliss Exp $
+$Id: Log.pm,v 0.11 2008/08/28 06:36:44 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -48,9 +48,17 @@ $Id: Log.pm,v 0.9 2008/02/27 06:49:23 acorliss Exp $
 
 =head1 REQUIREMENTS
 
+=over
+
+=item o
+
 Paranoid::Debug
 
+=item o
+
 Paranoid::Module
+
+=back
 
 =head1 DESCRIPTION
 
@@ -108,17 +116,21 @@ use vars qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS);
 use Exporter;
 use Paranoid::Debug;
 use Paranoid::Module;
+use Paranoid::Input;
 use Carp;
 
-($VERSION)    = (q$Revision: 0.9 $ =~ /(\d+(?:\.(\d+))+)/);
+($VERSION)    = (q$Revision: 0.11 $ =~ /(\d+(?:\.(\d+))+)/);
 
 @ISA          = qw(Exporter);
-@EXPORT       = qw(enableFacility disableFacility plog psyslog);
-@EXPORT_OK    = qw(enableFacility disableFacility clearLogDist 
-                   initLogDist plog ptimestamp psyslog);
+@EXPORT       = qw(enableFacility   disableFacility   plog
+                   psyslog);
+@EXPORT_OK    = qw(enableFacility   disableFacility   clearLogDist 
+                   initLogDist      plog              ptimestamp
+                   psyslog);
 %EXPORT_TAGS  = (
-  all   => [qw(enableFacility disableFacility clearLogDist initLogDist 
-               plog ptimestamp psyslog)],
+  all   => [qw(enableFacility   disableFacility   clearLogDist
+               initLogDist      plog              ptimestamp
+               psyslog)],
   );
 
 my @LEVELS  = qw(debug info notice warn warning err error crit alert 
@@ -186,28 +198,37 @@ my @LEVELS  = qw(debug info notice warn warning err error crit alert
     # Otherwise, try to load it now
     } else {
 
-      # First attempt under the Paranoid::Log::* namespace
-      $rv = $module eq 'Stderr' ? 1 : 
-        loadModule("Paranoid::Log::$module", '') &&
-        eval "Paranoid::Log::${module}::init();" &&
-        eval "\$sref = \\&Paranoid::Log::${module}::log;" ? 1 :
-        0;
+      # Detaint module name
+      if (detaint($module, 'filename', \$module)) {
 
-      # Second attempt in its own namespace
-      unless ($rv) {
-        $rv = (loadModule($module, '') && eval "${module}::init();" &&
-          eval "\$sref = \\&${module}::log;") ? 1 : 0;
-      }
+        # First attempt under the Paranoid::Log::* namespace
+        $rv = $module eq 'Stderr' ? 1 : 
+          loadModule("Paranoid::Log::$module", '') &&
+          eval "Paranoid::Log::${module}::init();" &&
+          eval "\$sref = \\&Paranoid::Log::${module}::log;" ? 1 :
+          0;
 
-      # Cache & report the results
-      if ($rv) {
-        $loaded{$module} = 1;
-        $logRefs{$module} = $sref;
-        pdebug("successfully loaded $module",
-          10);
+        # Second attempt in its own namespace
+        unless ($rv) {
+          $rv = (loadModule($module, '') && eval "${module}::init();" &&
+            eval "\$sref = \\&${module}::log;") ? 1 : 0;
+        }
+
+        # Cache & report the results
+        if ($rv) {
+          $loaded{$module} = 1;
+          $logRefs{$module} = $sref;
+          pdebug("successfully loaded $module",
+            10);
+        } else {
+          $loaded{$module} = 0;
+          pdebug("failed to load $module", 10);
+        }
+
+      # Report any taint errors
       } else {
-        $loaded{$module} = 0;
-        pdebug("failed to load $module", 10);
+        Paranoid::ERROR = pdebug("failed to detaint module name", 9);
+        $rv = 0;
       }
     }
 
@@ -482,21 +503,23 @@ sub enableFacility ($$;$$@) {
   my $scope         = shift;
   my @args          = @_;
   my $larg          = defined $logLevel ? $logLevel : 'undef';
-  my $sarg          = defined $scope ? $scope : 'undef';
+  my $sarg          = defined $scope    ? $scope    : 'undef';
   my @scopes        = qw(= + -);
   my $rv            = 0;
 
   # Validate arguments
   $logLevel = 'notice' unless defined $logLevel;
   $scope    = '+' unless defined $scope;
-  croak "Invalid name was passed to enableFacility()" unless 
+  croak "Mandatory first argument must be a defined name" unless
     defined $name;
-  croak "Invalid log level was passed to enableFacility()" unless
+  croak "Mandatory second argument must be a defined log facility" unless
+    defined $facility;
+  croak "Optional third argument must be a valid log level" unless
     grep /^\Q$logLevel\E$/, @LEVELS;
-  croak "Invalid scope was passed to enableFacility()" unless
+  croak "Optional fourth argument must be a valid scope" unless
     grep /^\Q$scope\E$/, @scopes;
 
-  pdebug("entering w/($facility)($larg)($sarg)", 9);
+  pdebug("entering w/($name)($facility)($larg)($sarg)", 9);
   pIn();
 
   # Convert level synonyms
@@ -527,7 +550,7 @@ sub disableFacility ($) {
   my $name          = shift;
   my $rv;
 
-  croak "Invalid name was passed to enableFacility()" unless 
+  croak "Mandatory first argument must be a valid name" unless
     defined $name;
 
   pdebug("entering w/($name)", 9);
@@ -560,10 +583,10 @@ sub plog ($$) {
   my ($lref, $sref);
 
   # Validate arguments
-  croak "Invalid severity was passed to plog()" unless
+  croak "Mandatory first argument must be a valid severity" unless
     defined $severity && grep /^\Q$severity\E$/, @LEVELS;
-  croak "Undefined or non-scalar value passed as the message to plog()"
-    unless defined $message && ref($message) eq "";
+  croak "Mandatory second argument must be a defined message" unless
+    defined $message && ref($message) eq "" && length($message);
 
   pdebug("entering w/($severity)($message)", 9);
   pIn();
@@ -649,10 +672,10 @@ sub psyslog ($$) {
   my $rv;
 
   # Validate arguments
-  croak "Invalid severity was passed to psyslog()" unless
+  croak "Mandatory first argument must be a valid severity" unless
     defined $severity;
-  croak "Undefined or non-scalar value passed as the message to psyslog()"
-    unless defined $message && ref($message) eq "";
+  croak "Mandatory second argument must be a defined message" unless
+    defined $message && ref($message) eq "" && length($message);
 
   pdebug("entering w/($severity)($message)", 9);
   pIn();

@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Process.pm,v 0.6 2008/02/27 06:49:59 acorliss Exp $
+# $Id: Process.pm,v 0.8 2008/08/28 06:22:51 acorliss Exp $
 #
 #    This program is free software; you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -22,15 +22,17 @@
 
 =head1 NAME
 
-Paraniod::Process - Process Management Functions
+Paranoid::Process - Process Management Functions
 
 =head1 MODULE VERSION
 
-$Id: Process.pm,v 0.6 2008/02/27 06:49:59 acorliss Exp $
+$Id: Process.pm,v 0.8 2008/08/28 06:22:51 acorliss Exp $
 
 =head1 SYNOPSIS
 
   use Paranoid::Process;
+
+  MAXCHILDREN = 100;
 
   $SIG{CHLD} = \&sigchld;
   $count = childrenCount();
@@ -41,11 +43,25 @@ $Id: Process.pm,v 0.6 2008/02/27 06:49:59 acorliss Exp $
   $gid = ptranslateGroup("foo");
   $rv = switchUser($user, $group);
 
+  $rv = pcapture($cmd, \$crv, \$out);
+
 =head1 REQUIREMENTS
 
+=over
+
+=item o
+
 Paranoid
+
+=item o
+
 Paranoid::Debug
+
+=item o
+
 POSIX
+
+=back
 
 =head1 DESCRIPTION
 
@@ -76,19 +92,19 @@ use Paranoid::Debug;
 use POSIX qw(getuid setuid setgid WNOHANG);
 use Carp;
 
-($VERSION)    = (q$Revision: 0.6 $ =~ /(\d+(?:\.(\d+))+)/);
+($VERSION)    = (q$Revision: 0.8 $ =~ /(\d+(?:\.(\d+))+)/);
 
 @ISA          = qw(Exporter);
 @EXPORT       = qw(switchUser);
-@EXPORT_OK    = qw(MAXCHILDREN childrenCount installChldHandler
-                   sigchld pfork ptranslateUser ptranslateGroup
-                   switchUser);
+@EXPORT_OK    = qw(MAXCHILDREN      childrenCount   installChldHandler
+                   sigchld          pfork           ptranslateUser
+                   ptranslateGroup  switchUser      pcapture);
 %EXPORT_TAGS  = (
-  all   => [qw(MAXCHILDREN childrenCount installChldHandler 
-               sigchld pfork ptranslateUser ptranslateGroup
-               switchUser)],
-  pfork => [qw(MAXCHILDREN childrenCount installChldHandler
-               sigchld pfork)],
+  all   => [qw(MAXCHILDREN      childrenCount   installChldHandler 
+               sigchld          pfork           ptranslateUser
+               ptranslateGroup  switchUser      pcapture)],
+  pfork => [qw(MAXCHILDREN      childrenCount   installChldHandler
+               sigchld          pfork)],
   );
 
 #####################################################################
@@ -138,7 +154,7 @@ child's PID and exit value as arguments.
   sub installChldHandler ($) {
     $chldRef = shift;
 
-    croak "installChldHandler passed a no sub ref!" unless
+    croak "installChldHandler passed no sub ref!" unless
       defined $chldRef && ref($chldRef) eq 'CODE';
   }
   sub _chldHandler () { return $chldRef };
@@ -226,7 +242,8 @@ sub ptranslateUser ($) {
   my ($uuid, @pwentry, $rv, $rvarg);
 
   # Validate arguments
-  croak "Undefined user passed to ptranslateUser()" unless defined $user;
+  croak "Mandatory first argument must be a defined username" unless
+    defined $user;
 
   pdebug("entering w/($user)", 9);
   pIn();
@@ -260,7 +277,7 @@ sub ptranslateGroup ($) {
   my ($ugid, @pwentry, $rv, $rvarg);
 
   # Validate arguments
-  croak "Undefined group passed to ptranslateGroup()" unless 
+  croak "Mandatory first argument must be a defined group name" unless
     defined $group;
 
   pdebug("entering w/($group)", 9);
@@ -302,7 +319,7 @@ sub switchUser ($;$) {
   my (@pwentry, $duid, $dgid);
 
   # Validate arguments
-  croak "No user or group was passed to switchUser()" unless 
+  croak "Mandatory argument of either user or group must be passed" unless
     defined $user || defined $group;
 
   pdebug("entering w/($uarg)($garg)", 9);
@@ -354,6 +371,88 @@ sub switchUser ($;$) {
         $rv = 0;
       }
     }
+  }
+
+  pOut();
+  pdebug("leaving w/rv: $rv", 9);
+
+  return $rv;
+}
+
+=head2 pcapture
+
+  $rv = pcapture($cmd, \$crv, \$out);
+
+This function executes the passed shell command and returns one of the following
+three values:
+
+  RV    Description
+  =======================================================
+  -1    Command failed to execute or died with signal
+   0    Command executed but exited with a non-0 RV
+   1    Command executed and exited with a 0 RV
+
+The actual return value is populated in the passed scalar reference, while all
+STDERR/STDOUT output is stored in the last scalar reference.  Any errors
+executing the command will have the error string stored in B<Paranoid::ERROR>.
+
+If the command exited cleanly it will automatically be bit shifted eight
+bits.
+
+B<NOTE:> Unlike many other functions in this suite it is up to you to detaint
+the command passed to this function yourself.  There's simply no way for me to
+know ahead of time what kind of convoluted arguments you might be handing this
+call before system is called.  Failing to detaint that argument will cause
+your script to exit under taint mode.
+
+=cut
+
+sub pcapture ($$$) {
+  my $cmd   = shift;
+  my $cref  = shift;
+  my $oref  = shift;
+  my $rv    = -1;
+
+  # Validate arguments
+  croak "Mandatory first argument must be a defined shell command string"
+    unless defined $cmd;
+  croak "Mandatory second argument must be a scalar reference" unless
+    defined $cref && ref($cref) eq 'SCALAR';
+  croak "Mandatory third argument must be a scalar reference" unless
+    defined $oref && ref($oref) eq 'SCALAR';
+
+  pdebug("entering w/($cmd)($cref)($oref)", 9);
+  pIn();
+
+  # Massage the command string
+  $cmd = "( $cmd ) 2>&1";
+
+  # Execute and snarf the output
+  pdebug("executing command", 9);
+  $$oref = `$cmd`;
+  $$cref = $?;
+
+  # Check the return value
+  #
+  # Okay, this first one is a big stretch, but since we're executing a command
+  # in a subshell we won't get -1 like normal, but that shell should return
+  # with a most probably non-portable return code of 32512...
+  #
+  # Son of a gun, it's portable as far as Solaris & Linux...
+  if ($$cref == 32512) {
+    Paranoid::ERROR = pdebug("command failed to execute: $!", 9);
+
+  # The above note means that I'm probably screwed for this test case in so
+  # many ways...
+  } elsif ($$cref & 127) {
+    Paranoid::ERROR = pdebug("command died with signal: @{[ $$cref & 127 ]}",
+      9);
+
+  # Let's pretend there are no problems, though, and here we are!
+  } else {
+    $$cref >>= 8;
+    pdebug("command exited with rv: $$cref", 9);
+    $rv = $$cref == 0 ? 1 : 0;
   }
 
   pOut();

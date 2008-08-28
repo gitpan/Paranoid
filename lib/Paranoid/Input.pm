@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Input.pm,v 0.10 2008/02/27 06:48:51 acorliss Exp $
+# $Id: Input.pm,v 0.12 2008/08/28 06:35:28 acorliss Exp $
 #
 #    This program is free software; you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -26,7 +26,7 @@ Paranoid::Input - Paranoid input function
 
 =head1 MODULE VERSION
 
-$Id: Input.pm,v 0.10 2008/02/27 06:48:51 acorliss Exp $
+$Id: Input.pm,v 0.12 2008/08/28 06:35:28 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -37,12 +37,25 @@ $Id: Input.pm,v 0.10 2008/02/27 06:48:51 acorliss Exp $
   $rv = slurp($filename, \@lines);
   addTaintRegex("telephone", qr/\(\d{3}\)\s+\d{3}-\d{4}/);
   $rv = detaint($userInput, "login", \$val);
+  $rv = stringMatch($input, @strings);
 
 =head1 REQUIREMENTS
 
+=over
+
+=item o
+
 Fcntl
+
+=item o
+
 Paranoid
+
+=item o
+
 Paranoid::Debug
+
+=back
 
 =head1 DESCRIPTION
 
@@ -70,13 +83,15 @@ use Paranoid;
 use Paranoid::Debug;
 use Carp;
 
-($VERSION)    = (q$Revision: 0.10 $ =~ /(\d+(?:\.(\d+))+)/);
+($VERSION)    = (q$Revision: 0.12 $ =~ /(\d+(?:\.(\d+))+)/);
 
 @ISA          = qw(Exporter);
-@EXPORT       = qw(FSZLIMIT slurp detaint stringMatch);
-@EXPORT_OK    = qw(FSZLIMIT slurp detaint addTaintRegex stringMatch);
+@EXPORT       = qw(FSZLIMIT       slurp     detaint     stringMatch);
+@EXPORT_OK    = qw(FSZLIMIT       slurp     detaint     stringMatch
+                   addTaintRegex);
 %EXPORT_TAGS  = (
-  all => [qw(FSZLIMIT slurp detaint addTaintRegex stringMatch)],
+  all => [qw(FSZLIMIT       slurp     detaint     stringMatch
+             addTaintRegex)],
   );
 
 #####################################################################
@@ -133,11 +148,11 @@ sub slurp ($$;$) {
   my $rv      = 0;
   my ($fd, $b, $line, @lines);
 
-  # Validate args
-  croak "No file argument was passed to slurp()"
-    unless defined $file;
-  croak "No array reference was passed to slurp()"
-    unless defined $aref && ref($aref) eq 'ARRAY';
+  # Validate arguments
+  croak "Mandatory first argument must be a defined filename" unless
+    defined $file;
+  croak "Mandatory second argument must be an array reference" unless
+    defined $aref && ref($aref) eq 'ARRAY';
 
   pdebug("entering w/($file)($aref)($doChomp)", 9);
   pIn();
@@ -153,7 +168,13 @@ sub slurp ($$;$) {
     }
     pOut();
     pdebug("leaving w/rv: $rv", 9);
-    return $rv;
+    return 0;
+  }
+  unless (detaint($file, 'filename', \$b)) {
+    Paranoid::ERROR = pdebug("failed to detaint filename: $file", 9);
+    pOut();
+    pdebug("leaving w/rv: $rv", 9);
+    return 0;
   }
 
   # Read the file
@@ -209,7 +230,8 @@ sub slurp ($$;$) {
     alnumwhite     => qr/[a-zA-Z0-9\s]+/,
     email          => 
       qr/[a-zA-Z][\w\.\-]*\@(?:[a-zA-Z0-9][a-zA-Z0-9\-]*\.)*[a-zA-Z0-9]+/,
-    filename       => qr#[/ \w\-\.:,;]+#,
+    filename       => qr#[/ \w\-\.:,@\+]+\[?#,
+    fileglob       => qr#[/ \w\-\.:,@\+\*\?\{\}\[\]]+\[?#,
     hostname       => qr/(?:[a-zA-Z0-9][a-zA-Z0-9\-]*\.)*[a-zA-Z0-9]+/,
     ipaddr         => qr/(?:\d+\.){3}\d+/,
     netaddr        => qr#^(?:\d+\.){3}\d+(?:/(?:\d+|(?:\d+\.){3}\d+))?$#,
@@ -256,7 +278,8 @@ data types are currently known:
   email                 ^([a-zA-Z][\w\.\-]*\@
                         (?:[a-zA-Z0-9][a-zA-Z0-9\-]*\.)*
                         [a-zA-Z0-9]+)$
-  filename              ^[/ \w\-\.:,;]+$
+  filename              ^[/ \w\-\.:,@\+]+\[?$
+  fileglob              ^[/ \w\-\.:,@\+\*\?\{\}\[\]]+\[?$
   hostname              ^(?:[a-zA-Z0-9][a-zA-Z0-9\-]*\.)*
                         [a-zA-Z0-9]+)$
   ipaddr                ^(?:\d+\.){3}\d+$
@@ -282,11 +305,12 @@ sub detaint ($$$) {
   my $regex = _getTaintRegex($type);
 
   # Validate arguments
-  croak "No valid input was passed to detain()" unless defined $input &&
-    length($input) > 0;
-  croak "No valid type was passed to detaint()" unless defined $regex;
-  croak "No scalar reference was passed to detaint()"
-    unless defined $sref && ref($sref) eq 'SCALAR';
+  croak "Mandatory first argument must be defined and not ''" unless
+    defined $input && length($input) > 0;
+  croak "Mandatory second argument must be a valid data type" unless
+    defined $type && defined $regex;
+  croak "Mandatory third argument must be a valid scalar reference" unless
+    defined $sref && ref($sref) eq 'SCALAR';
 
   pdebug("entering w/($input)($type)($sref)", 9);
   pIn();
@@ -320,6 +344,9 @@ input for every string passed for matching.  This does safe quoted matches
 (\Q$string\E) for all the strings, unless the string is a perl Regexp 
 (defined with qr//) or begins and ends with /.
 
+B<NOTE>: this performs a study in hopes that for a large number of regexes
+will be performed faster.  This may not always be the case.
+
 =cut
 
 sub stringMatch ($@) {
@@ -329,8 +356,9 @@ sub stringMatch ($@) {
   my (@regex, $r);
 
   # Validate arguments
-  croak "No valid input was passed to stringMatch()" unless defined $input;
-  croak "No valid strings were passed to stringMatch()" unless scalar
+  croak "Mandatory first argument must be defined input" unless 
+    defined $input;
+  croak "Mandatory string matches must be passed after input" unless
     @match;
 
   pdebug("entering w/($input)(@match)", 9);
@@ -345,6 +373,7 @@ sub stringMatch ($@) {
   }
 
   # Start comparisons
+  study $input;
   foreach $r (@regex) {
     if ($input =~ /$r/mi) {
       $rv = 1;

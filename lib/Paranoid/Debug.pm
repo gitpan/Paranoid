@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Debug.pm,v 0.8 2008/02/27 17:57:52 acorliss Exp $
+# $Id: Debug.pm,v 0.9 2008/08/28 06:22:51 acorliss Exp $
 #
 #    This program is free software; you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -22,11 +22,11 @@
 
 =head1 NAME
 
-Paraniod::Debug - Trace message support for paranoid programs
+Paranoid::Debug - Trace message support for paranoid programs
 
 =head1 MODULE VERSION
 
-$Id: Debug.pm,v 0.8 2008/02/27 17:57:52 acorliss Exp $
+$Id: Debug.pm,v 0.9 2008/08/28 06:22:51 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -49,7 +49,13 @@ $Id: Debug.pm,v 0.8 2008/02/27 17:57:52 acorliss Exp $
 
 =head1 REQUIREMENTS
 
+=over
+
+=item o
+
 Paranoid
+
+=back
 
 =head1 DESCRIPTION
 
@@ -87,7 +93,7 @@ use vars qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS);
 use Exporter;
 use Paranoid;
 
-($VERSION)    = (q$Revision: 0.8 $ =~ /(\d+(?:\.(\d+))+)/);
+($VERSION)    = (q$Revision: 0.9 $ =~ /(\d+(?:\.(\d+))+)/);
 
 @ISA          = qw(Exporter);
 @EXPORT       = qw(PDEBUG pdebug perror pIn pOut psetDebug);

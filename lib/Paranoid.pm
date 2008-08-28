@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Paranoid.pm,v 0.18 2008/02/29 20:47:29 acorliss Exp $
+# $Id: Paranoid.pm,v 0.20 2008/08/28 06:19:40 acorliss Exp $
 #
 #    This program is free software; you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -26,7 +26,7 @@ Paranoid - Paranoia support for safer programs
 
 =head1 MODULE VERSION
 
-$Id: Paranoid.pm,v 0.18 2008/02/29 20:47:29 acorliss Exp $
+$Id: Paranoid.pm,v 0.20 2008/08/28 06:19:40 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -91,7 +91,7 @@ use warnings;
 use vars qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS);
 use Exporter;
 
-($VERSION)    = (q$Revision: 0.18 $ =~ /(\d+(?:\.(\d+))+)/);
+($VERSION)    = (q$Revision: 0.20 $ =~ /(\d+(?:\.(\d+))+)/);
 
 @ISA          = qw(Exporter);
 @EXPORT       = qw(psecureEnv);
@@ -119,6 +119,124 @@ use Exporter;
   #                   chown, fcntl
   #  :sys_db = getpwnet, etc.
 #}
+
+=head1 TAINT NOTES
+
+Taint-mode programming can be somewhat of an adventure until you know all the
+places considered dangerous under perl's taint mode.  The following functions
+should generally have their arguments detainted before using:
+
+=over
+
+=item o
+
+exec
+
+=item o
+
+system
+
+=item o
+
+open
+
+=item o
+
+glob
+
+=item o
+
+unlink
+
+=item o
+
+mkdir
+
+=item o
+
+chdir
+
+=item o
+
+rmdir
+
+=item o
+
+chown
+
+=item o
+
+chmod
+
+=item o
+
+umask
+
+=item o
+
+utime
+
+=item o
+
+link
+
+=item o
+
+symlink
+
+=item o
+
+kill
+
+=item o
+
+eval
+
+=item o
+
+truncate
+
+=item o
+
+ioctl
+
+=item o
+
+fcntl
+
+=item o
+
+chroot
+
+=item o
+
+setpgrp
+
+=item o
+
+setpriority
+
+=item o
+
+syscall
+
+=item o
+
+socket
+
+=item o
+
+socketpair
+
+=item o
+
+bind
+
+=item o
+
+connect
+
+=back
 
 =head1 FUNCTIONS
 

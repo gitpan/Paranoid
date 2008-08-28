@@ -1,5 +1,38 @@
 CHANGELOG
 
+v0.20  (2008/04/28)
+===================
+--Misc. POD updates
+
+Paranoid::Filesystem:
+--Fixed bug in the recursion wrapper where there were errors in certain
+  modes when called on a hierarchy that included an empty subdirectory
+--Fixed bug in pchmod where subtracting perms (i.e., o-w) wouldn't result
+  in the correct permissions
+--Added automatic argument detainting for most functions
+--Replaced the horrible manual kludge of pglob with an intelligent wrapper for
+  the shell glob
+--ptouch now supports full shell globbing, even for non-existent files.
+--ptouchR can now create files, but won't automatically create subdirectories
+
+Paranoid::Input:
+--Added automatic filename detainting for slurp
+--Updated filename/fileglob regexes (expanded allowed characters)
+
+Paranoid::Log & Paranoid::Module:
+--Added automatic detainting of module names
+
+Paranoid::Log::File:
+--Added automatic detainting of log filenames
+
+v0.19  (2008/04/28)
+===================
+--Made the croak statements more internally consistent
+--Made releasing the lockfiles and db entries in BerkeleyDB more explicit
+--Updated filename regex in Input
+--Added study to stringMatch
+--Added pcapture function to Process
+
 v0.18  (2008/02/29)
 ===================
 --Fixed mail headers for Email module when there are multiple recipients

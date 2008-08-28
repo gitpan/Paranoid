@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Module.pm,v 0.1 2008/01/23 06:48:43 acorliss Exp $
+# $Id: Module.pm,v 0.3 2008/08/28 06:37:38 acorliss Exp $
 #
 #    This program is free software; you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -26,7 +26,7 @@ Paranoid::Module -- Paranoid Module Loading Routines
 
 =head1 MODULE VERSION
 
-$Id: Module.pm,v 0.1 2008/01/23 06:48:43 acorliss Exp $
+$Id: Module.pm,v 0.3 2008/08/28 06:37:38 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -36,9 +36,17 @@ $Id: Module.pm,v 0.1 2008/01/23 06:48:43 acorliss Exp $
 
 =head1 REQUIREMENTS
 
+=over
+
+=item o
+
 Paranoid
 
+=item o
+
 Paranoid::Debug
+
+=back
 
 =head1 DESCRIPTION
 
@@ -61,9 +69,10 @@ use vars qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS);
 use Exporter;
 use Paranoid;
 use Paranoid::Debug;
+use Paranoid::Input;
 use Carp;
 
-($VERSION)    = (q$Revision: 0.1 $ =~ /(\d+(?:\.(\d+))+)/);
+($VERSION)    = (q$Revision: 0.3 $ =~ /(\d+(?:\.(\d+))+)/);
 
 @ISA          = qw(Exporter);
 @EXPORT       = qw(loadModule);
@@ -101,17 +110,27 @@ track the return value of the import function.
     my $module  = shift;
     my @args    = @_;
     my $rv      = 0;
-    my $m       = defined $module ? $module : 'undef';
     my $a       = @args ? join(' ', @args) : '';
     my $caller  = scalar caller;
     my $c       = defined $caller ? $caller : 'undef';
-    my $string;
+    my ($string, $m);
 
-    pdebug("entering w/($m)($a)", 9);
+    croak "Mandatory first argument must be a defined module name" unless
+      defined $module;
+
+    pdebug("entering w/($module)($a)", 9);
     pIn();
 
     # Debug info
     pdebug("calling package: $c", 10);
+
+    # Detaint module name
+    if (detaint($module, 'filename', \$m)) {
+      $module = $m;
+    } else {
+      Paranoid::ERROR = pdebug("failed to detaint module name", 9);
+      $tested{$module} = 0;
+    }
 
     # Skip if we've already done this
     unless (exists $tested{$module}) {

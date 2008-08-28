@@ -33,6 +33,7 @@ WriteMakefile(
   AUTHOR          => 'Arthur Corliss <corliss@digitalmages.com>',
   VERSION_FROM    => 'lib/Paranoid.pm',
   PREREQ_PM       => {},
+  LICENSE         => 'gpl',
   );
 
 exit 0;

@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Lockfile.pm,v 0.2 2008/01/23 06:49:38 acorliss Exp $
+# $Id: Lockfile.pm,v 0.4 2008/08/28 06:22:51 acorliss Exp $
 #
 #    This program is free software; you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -26,7 +26,7 @@ Paranoid::Lockfile - Paranoid Lockfile support
 
 =head1 MODULE VERSION
 
-$Id: Lockfile.pm,v 0.2 2008/01/23 06:49:38 acorliss Exp $
+$Id: Lockfile.pm,v 0.4 2008/08/28 06:22:51 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -38,9 +38,21 @@ $Id: Lockfile.pm,v 0.2 2008/01/23 06:49:38 acorliss Exp $
 
 =head1 REQUIREMENTS
 
+=over
+
+=item o
+
 Fcntl
+
+=item o
+
 Paranoid
+
+=item o
+
 Paranoid::Debug
+
+=back
 
 =head1 DESCRIPTION
 
@@ -71,7 +83,7 @@ use Paranoid::Debug;
 use Paranoid::Filesystem;
 use Carp;
 
-($VERSION)    = (q$Revision: 0.2 $ =~ /(\d+(?:\.(\d+))+)/);
+($VERSION)    = (q$Revision: 0.4 $ =~ /(\d+(?:\.(\d+))+)/);
 
 @ISA          = qw(Exporter);
 @EXPORT       = qw(plock punlock pcloseLockfile);
@@ -143,9 +155,9 @@ filesystem permissions if the file is created.  The default is 0600.
     my $fd;
 
     # Validate arguments
-    croak "No valid filename was passed to plock()" unless 
+    croak "Mandatory first argument must be a defined filename" unless
       defined $filename && length($filename) > 0;
-    croak "No valid lock type was passed t plock()" unless
+    croak "Optional second argument must be a valid lock type" unless
       ! defined $type || (defined $type && $type =~ /^(?:write|shared)$/);
 
     pdebug("entering w/($filename)($targ)($marg)", 9);
@@ -204,7 +216,7 @@ This does not, however, close the open filehandle to the lockfile.
     my $rv        = 1;
 
     # Validate arguments
-    croak "No valid filename was passed to plock()" unless 
+    croak "Mandatory first argument must be a defined filename" unless 
       defined $filename && length($filename) > 0;
 
     pdebug("entering w/($filename)", 9);
@@ -233,7 +245,7 @@ succeeds.
     my $rv        = 1;
 
     # Validate arguments
-    croak "No valid filename was passed to plock()" unless 
+    croak "Mandatory first argument must be a defined filename" unless 
       defined $filename && length($filename) > 0;
 
     pdebug("entering w/($filename)", 9);

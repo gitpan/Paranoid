@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Network.pm,v 0.2 2008/01/23 06:49:38 acorliss Exp $
+# $Id: Network.pm,v 0.4 2008/08/28 06:22:51 acorliss Exp $
 #
 #    This program is free software; you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -22,11 +22,11 @@
 
 =head1 NAME
 
-Paraniod::Network - Network functions for paranoid programs
+Paranoid::Network - Network functions for paranoid programs
 
 =head1 MODULE VERSION
 
-$Id: Network.pm,v 0.2 2008/01/23 06:49:38 acorliss Exp $
+$Id: Network.pm,v 0.4 2008/08/28 06:22:51 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -37,7 +37,13 @@ $Id: Network.pm,v 0.2 2008/01/23 06:49:38 acorliss Exp $
 
 =head1 REQUIREMENTS
 
+=over
+
+=item o
+
 Paranoid
+
+=back
 
 =head1 DESCRIPTION
 
@@ -61,7 +67,7 @@ use Paranoid::Debug;
 use Socket;
 use Carp;
 
-($VERSION)    = (q$Revision: 0.2 $ =~ /(\d+(?:\.(\d+))+)/);
+($VERSION)    = (q$Revision: 0.4 $ =~ /(\d+(?:\.(\d+))+)/);
 
 @ISA          = qw(Exporter);
 @EXPORT       = qw(ipInNetwork hostInDomain);
@@ -93,10 +99,9 @@ sub ipInNetwork ($@) {
   my $rv        = 0;
   my ($bip, $bnet, $bmask);
 
-  # Validate args
-  croak "Undefined IP passed to ipInNetwork()" unless defined $ip;
-  croak "Invalid IP ($ip) passed to ipInNetwork()" unless 
-    $ip =~ m#^(?:(?:\d+\.){3})?\d+$#;
+  # Validate arguments
+  croak "Mandatory first argument must be a defined IP address" unless
+    defined $ip && $ip =~ m#^(?:(?:\d+\.){3})?\d+$#;
 
   pdebug("entering w/($ip)(@networks)", 9);
   pIn();
@@ -164,11 +169,9 @@ sub hostInDomain ($@) {
   my $rv      = 0;
   my $domain;
 
-  # Validate args
-  croak "Undefined hostname passed to hostInDomain()" unless 
-    defined $host;
-  croak "Invalid hostname ($host) passed to hostInDomain()" unless 
-    $host =~ /^(?:[\w\-]+\.)*[\w\-]+$/;
+  # Validate arguments
+  croak "Mandatory first argument must be a defined and valid hostname" unless
+    defined $host && $host =~ /^(?:[\w\-]+\.)*[\w\-]+$/;
 
   pdebug("entering w/($host)(@domains)", 9);
   pIn();

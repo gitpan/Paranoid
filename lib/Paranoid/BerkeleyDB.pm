@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: BerkeleyDB.pm,v 0.2 2008/02/27 06:46:39 acorliss Exp $
+# $Id: BerkeleyDB.pm,v 0.4 2008/08/28 06:20:15 acorliss Exp $
 #
 #    This program is free software; you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -26,7 +26,7 @@ Paranoid::BerkeleyDB -- Paranoid BerkeleyDB Usage Routines
 
 =head1 MODULE VERSION
 
-$Id: BerkeleyDB.pm,v 0.2 2008/02/27 06:46:39 acorliss Exp $
+$Id: BerkeleyDB.pm,v 0.4 2008/08/28 06:20:15 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -49,17 +49,33 @@ $Id: BerkeleyDB.pm,v 0.2 2008/02/27 06:46:39 acorliss Exp $
 
   @dbs = $db->listDbs();
 
+  $db->close;
+
 =head1 REQUIREMENTS
+
+=over
+
+=item o
 
 Paranoid
 
+=item o
+
 Paranoid::Debug
+
+=item o
 
 Paranoid::Filesystem
 
+=item o
+
 Paranoid::Lockfile
 
+=item o
+
 BerkeleyDB;
+
+=back
 
 =head1 DESCRIPTION
 
@@ -73,11 +89,11 @@ for a different database.
 Databases and environments are created using the defaults for both the
 environment and the databases.  This won't be the highest performance
 implementation for BerkeleyDB, but it should be the safest and most robust.
-This is part of the Paranoid Suite, after all.
 
 Limitations:  all keys and all values must be valid strings.  That means that
 attempting to set a valid key's associated value to B<undef> will fail to add
-that key to the database.
+that key to the database.  In fact, if the an existing key is assigned a
+undefined value it will be deleted from the database.
 
 =cut
 
@@ -99,7 +115,7 @@ use Paranoid::Filesystem qw(pmkdir);
 use BerkeleyDB;
 use Carp;
 
-($VERSION)    = (q$Revision: 0.2 $ =~ /(\d+(?:\.(\d+))+)/);
+($VERSION)    = (q$Revision: 0.4 $ =~ /(\d+(?:\.(\d+))+)/);
 
 #####################################################################
 #
@@ -554,9 +570,13 @@ sub DESTROY {
       pdebug("sync/close $_", 10);
       $$dref{$_}->db_sync;
       $$dref{$_}->db_close;
+      delete $$dref{$_};
     }
   }
+
+  # Release the locks
   punlock("$dbdir/db.lock");
+  pcloseLockfile("$dbdir/db.lock");
 
   pOut();
   pdebug("leaving", 9);

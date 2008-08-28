@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Template.pm,v 0.4 2008/02/28 19:26:49 acorliss Exp $
+# $Id: Template.pm,v 0.5 2008/08/28 06:39:53 acorliss Exp $
 #
 #    This program is free software; you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -22,11 +22,11 @@
 
 =head1 NAME
 
-Paraniod::Log::Template - Log Facility Template
+Paranoid::Log::Template - Log Facility Template
 
 =head1 MODULE VERSION
 
-$Id: Template.pm,v 0.4 2008/02/28 19:26:49 acorliss Exp $
+$Id: Template.pm,v 0.5 2008/08/28 06:39:53 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -42,7 +42,13 @@ $Id: Template.pm,v 0.4 2008/02/28 19:26:49 acorliss Exp $
 
 =head1 REQUIREMENTS
 
+=over
+
+=item o
+
 Paranoid::Debug
+
+=back
 
 =head1 DESCRIPTION
 
@@ -70,7 +76,7 @@ use vars qw($VERSION);
 use Paranoid::Debug;
 use Carp;
 
-($VERSION)    = (q$Revision: 0.4 $ =~ /(\d+(?:\.(\d+))+)/);
+($VERSION)    = (q$Revision: 0.5 $ =~ /(\d+(?:\.(\d+))+)/);
 
 #####################################################################
 #

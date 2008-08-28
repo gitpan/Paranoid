@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Buffer.pm,v 0.5 2008/02/28 19:26:49 acorliss Exp $
+# $Id: Buffer.pm,v 0.7 2008/08/28 06:39:53 acorliss Exp $
 #
 #    This program is free software; you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -22,11 +22,11 @@
 
 =head1 NAME
 
-Paraniod::Log::Buffer - Log Buffer Functions
+Paranoid::Log::Buffer - Log Buffer Functions
 
 =head1 MODULE VERSION
 
-$Id: Buffer.pm,v 0.5 2008/02/28 19:26:49 acorliss Exp $
+$Id: Buffer.pm,v 0.7 2008/08/28 06:39:53 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -42,7 +42,13 @@ $Id: Buffer.pm,v 0.5 2008/02/28 19:26:49 acorliss Exp $
 
 =head1 REQUIREMENTS
 
+=over
+
+=item o
+
 Paranoid::Debug
+
+=back
 
 =head1 DESCRIPTION
 
@@ -83,7 +89,7 @@ use vars qw($VERSION);
 use Paranoid::Debug;
 use Carp;
 
-($VERSION)    = (q$Revision: 0.5 $ =~ /(\d+(?:\.(\d+))+)/);
+($VERSION)    = (q$Revision: 0.7 $ =~ /(\d+(?:\.(\d+))+)/);
 
 #####################################################################
 #
@@ -181,8 +187,10 @@ sub log($$$$$$$$) {
   my $buffer    = _getBuffer($name);
 
   # Validate arguments
-  croak "Invalid buffer name passed to Buffer::log()" unless defined $name;
-  croak "Invalid message passed to Buffer::log()" unless defined $message;
+  croak "Mandatory third argument must be a valid message" unless defined
+    $message;
+  croak "Mandatory fourth argument must be a defined buffer name" unless
+    defined $name;
 
   pdebug("entering w/($msgtime)($severity)($message)($name)($facility)" .
     "($level)($scope)($barg)", 9);

@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Syslog.pm,v 0.4 2008/02/28 19:26:49 acorliss Exp $
+# $Id: Syslog.pm,v 0.6 2008/08/28 06:39:53 acorliss Exp $
 #
 #    This program is free software; you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -22,11 +22,11 @@
 
 =head1 NAME
 
-Paraniod::Log::Syslog - Log Facility Syslog
+Paranoid::Log::Syslog - Log Facility Syslog
 
 =head1 MODULE VERSION
 
-$Id: Syslog.pm,v 0.4 2008/02/28 19:26:49 acorliss Exp $
+$Id: Syslog.pm,v 0.6 2008/08/28 06:39:53 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -39,9 +39,17 @@ $Id: Syslog.pm,v 0.4 2008/02/28 19:26:49 acorliss Exp $
 
 =head1 REQUIREMENTS
 
+=over
+
+=item o
+
 Paranoid::Debug
 
+=item o
+
 Unix::Syslog
+
+=back
 
 =head1 DESCRIPTION
 
@@ -67,7 +75,7 @@ use Paranoid::Debug;
 use Unix::Syslog qw(:macros :subs);
 use Carp;
 
-($VERSION)    = (q$Revision: 0.4 $ =~ /(\d+(?:\.(\d+))+)/);
+($VERSION)    = (q$Revision: 0.6 $ =~ /(\d+(?:\.(\d+))+)/);
 
 #####################################################################
 #
@@ -229,8 +237,6 @@ sub log($$$$$$$) {
   my $facility  = shift;
   my $level     = shift;
   my $scope     = shift;
-  my $narg      = defined $name     ? $name     : 'undef';
-  my $sarg      = defined $severity ? $severity : 'undef';
   my $rv        = 0;
 
   # Set defaults on optional args
@@ -238,13 +244,15 @@ sub log($$$$$$$) {
   $severity = 'notice' unless defined $severity;
 
   # Validate arguments
-  croak "Invalid message passed to Syslog::log" unless defined $message;
-  croak "Invalid facility passed to Syslog::log: $narg" unless
-    defined _transFacility($name);
-  croak "Invalid severity passed to Syslog::log: $sarg" unless
+  croak "Mandatory second argument must be a valid severity" unless
     defined _transLevel($severity);
+  croak "Mandatory third argument must be a valid message" unless defined
+    $message;
+  croak "Mandatory fifth argument must be a valid syslog facility" unless
+    defined _transFacility($name);
 
-  pdebug("entering w/($message)($narg)($sarg)", 9);
+  pdebug("entering w/($msgtime)($severity)($message)($name)" .
+    "($facility)($level)($scope)", 9);
   pIn();
 
   # Make sure the logger is ready and log the message

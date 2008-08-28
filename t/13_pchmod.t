@@ -1,11 +1,11 @@
 # 13_pchmod.t
 
 use Paranoid::Filesystem qw(:all);
-#use Paranoid::Debug;
+use Paranoid::Debug;
 #PDEBUG = 20;
 
 $|++;
-print "1..15\n";
+print "1..17\n";
 
 my $test = 1;
 my (%errors, %data, $rv);
@@ -54,9 +54,11 @@ $rv ? print "ok $test\n" : print "not ok $test\n";
 $test++;
 
 # 11 Test pchmodR w/o following links
-mkdir "./t/test_chmod2";
-mkdir "./t/test_chmod2/foo";
+mkdir "./t/test_chmod2", 0777;
+mkdir "./t/test_chmod2/foo", 0777;
+mkdir "./t/test_chmod2/roo", 0777;
 symlink "../../test_chmod", "./t/test_chmod2/foo/bar";
+# PDEBUG = 20;
 $rv = pchmodR(0, \%errors, 0750, "./t/test_chmod2/*");
 $rv ? print "ok $test\n" : print "not ok $test\n";
 $test++;
@@ -69,12 +71,20 @@ $test++;
   print "not ok $test\n";
 $test++;
 
-# 14 Test pchmodR w/following links
+# 14 - 15 Test pchmodR w/o following links
+$rv = pchmodR(0, \%errors, 'o+rx', "./t/test_chmod2/*");
+$rv ? print "ok $test\n" : print "not ok $test\n";
+$test++;
+$rv = (stat "./t/test_chmod2/foo")[2] & 07777;
+$rv == 0755 ? print "ok $test\n" : print "not ok $test\n";
+$test++;
+
+# 16 Test pchmodR w/following links
 $rv = pchmodR(1, \%errors, 0755, "./t/test_chmod2/*");
 $rv ? print "ok $test\n" : print "not ok $test\n";
 $test++;
 
-# 15 Verify chmod
+# 17 Verify chmod
 ((stat "./t/test_chmod/foo")[2] & 07777) == 0755 ? print "ok $test\n" :
   print "not ok $test\n";
 $test++;

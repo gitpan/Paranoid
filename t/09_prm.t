@@ -1,7 +1,7 @@
 # 09_prm.t
 
 use Paranoid::Filesystem qw(:all);
-#use Paranoid::Debug;
+use Paranoid::Debug;
 #PDEBUG = 20;
 
 $|++;

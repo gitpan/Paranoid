@@ -1,6 +1,8 @@
 # 07_pglob.t
 
 use Paranoid::Filesystem qw(:all);
+use Paranoid::Debug;
+#PDEBUG = 10;
 
 $|++;
 print "1..2\n";
