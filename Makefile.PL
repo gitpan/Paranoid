@@ -1,12 +1,5 @@
 use ExtUtils::MakeMaker;
-
-# Override method in order to make sure test script is run with taint-mode
-# enabled.
-@ISA = qw(ExtUtils::MM_Any);
-sub MY::test_via_script {
-  my($self, $perl, $script) = @_;
-  return $self->SUPER::test_via_script("PERL_DL_NONLAZY=1 $perl -T", $script);
-}
+use 5.006;
 
 print << "__EOF__";
 This module contains a few modules with external (non-core) module
@@ -32,8 +25,13 @@ WriteMakefile(
   ABSTRACT        => 'General function library for safer, more secure programming',
   AUTHOR          => 'Arthur Corliss <corliss@digitalmages.com>',
   VERSION_FROM    => 'lib/Paranoid.pm',
-  PREREQ_PM       => {},
-  LICENSE         => 'gpl',
+  PREREQ_PM       => {
+                     'File::Glob'       => 0,
+                     'Test::Pod'        => 0,
+                     'Test::More'       => 0,
+                     },
+  ($ExtUtils::MakeMaker::VERSION ge '6.30_00' ? (
+    LICENSE => 'perl',) : ()),
   );
 
 exit 0;

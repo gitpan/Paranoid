@@ -2,31 +2,554 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Log.pm,v 0.11 2008/08/28 06:36:44 acorliss Exp $
+# $Id: Log.pm,v 0.13 2009/03/04 09:32:51 acorliss Exp $
 #
-#    This program is free software; you can redistribute it and/or modify
-#    it under the terms of the GNU General Public License as published by
-#    the Free Software Foundation; either version 2 of the License, or
-#    any later version.
-#
-#    This program is distributed in the hope that it will be useful,
-#    but WITHOUT ANY WARRANTY; without even the implied warranty of
-#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#    GNU General Public License for more details.
-#
-#    You should have received a copy of the GNU General Public License
-#    along with this program; if not, write to the Free Software
-#    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+#    This software is licensed under the same terms as Perl, itself.
+#    Please see http://dev.perl.org/licenses/ for more information.
 #
 #####################################################################
+
+#####################################################################
+#
+# Environment definitions
+#
+#####################################################################
+
+package Paranoid::Log;
+
+use 5.006;
+
+use strict;
+use warnings;
+use vars qw($VERSION @EXPORT @EXPORT_OK %EXPORT_TAGS);
+use base qw(Exporter);
+use Paranoid::Debug qw(:all);
+use Paranoid::Module;
+use Paranoid::Input;
+use Carp;
+
+($VERSION) = ( q$Revision: 0.13 $ =~ /(\d+(?:\.(\d+))+)/sm );
+
+@EXPORT = qw(enableFacility   disableFacility   plog
+    psyslog);
+@EXPORT_OK = qw(enableFacility   disableFacility   clearLogDist
+    initLogDist      plog              ptimestamp
+    psyslog);
+%EXPORT_TAGS = (
+    all => [
+        qw(enableFacility   disableFacility   clearLogDist
+            initLogDist      plog              ptimestamp
+            psyslog)
+           ],
+);
+
+my @LEVELS = qw(debug info notice warn warning err error crit alert
+    emerg panic);
+
+# Taken from syslog.h
+#use constant LOG_EMERG      => 0;       # system is unusable
+#use constant LOG_ALERT      => 1;       # action must be taken immediately
+#use constant LOG_CRIT       => 2;       # critical conditions
+#use constant LOG_ERR        => 3;       # error conditions
+#use constant LOG_WARNING    => 4;       # warning conditions
+#use constant LOG_NOTICE     => 5;       # normal but significant condition
+#use constant LOG_INFO       => 6;       # informational
+#use constant LOG_DEBUG      => 7;       # debug-level messages
+
+#####################################################################
+#
+# Module code follows
+#
+#####################################################################
+
+{
+
+    sub _convertLevel ($) {
+
+        # Purpose:  Converts syslog severity level synonyms to the ones used
+        #           internally
+        # Returns:  Primary name if found, otherwise original level passed
+        # Usage:    $level = _convertLevel($level);
+
+        my $level = shift;
+
+        return
+              $level eq 'panic'   ? 'emerg'
+            : $level eq 'error'   ? 'err'
+            : $level eq 'warning' ? 'warn'
+            :                       $level;
+    }
+
+    # Stores whether them modules was loaded
+    my %loaded = ();
+
+    # Stores a reference to the module's log function
+    my %logRefs = ();
+
+    sub _loadModule ($) {
+
+        # Purpose:  Loads the requested module if it hasn't been already.
+        #           Attempts to first load the module as a name relative to
+        #           Paranoid::Log, otherwise by itself.
+        # Returns:  True (1) if load was successful,
+        #           False (0) if there are any errors
+        # Usage:    $rv = _loadModule($module);
+
+        my $module = ucfirst shift;
+        my $sref;
+        my $rv;
+
+        pdebug( "entering w/($module)", PDLEVEL2 );
+        pIn();
+
+        # First attempt to load module under Paranoid::Log
+
+        # Return the status of the requested module if it was already
+        # autoloaded.
+
+        # Was module already loaded (or a load attempted)?
+        if ( exists $loaded{$module} ) {
+
+            # Yep, so return module status
+            $rv = $loaded{$module};
+
+        } else {
+
+            # Nope, so let's try to load it.
+            #
+            # Is the module name taint-safe?
+            if ( detaint( $module, 'filename', \$module ) ) {
+
+                # Yep, so try to load relative to Paranoid::Log
+                $rv =
+                    $module eq 'Stderr' ? 1
+                    : loadModule( "Paranoid::Log::$module", '' )
+                    && eval "Paranoid::Log::${module}::init();"
+                    && eval "\$sref = \\&Paranoid::Log::${module}::log;" ? 1
+                    :                                                      0;
+
+                # If that failed, try to load it directly
+                unless ($rv) {
+                    $rv =
+                        (      loadModule( $module, '' )
+                            && eval "${module}::init();"
+                            && eval "\$sref = \\&${module}::log;" ) ? 1 : 0;
+                }
+
+                # Cache & report the results
+                if ($rv) {
+                    $loaded{$module}  = 1;
+                    $logRefs{$module} = $sref;
+                    pdebug( "successfully loaded $module", PDLEVEL2 );
+                } else {
+                    $loaded{$module} = 0;
+                    pdebug( "failed to load $module", PDLEVEL2 );
+                }
+
+            } else {
+
+                # Module name failed detainting -- report
+                Paranoid::ERROR =
+                    pdebug( 'failed to detaint module name', PDLEVEL1 );
+                $rv = 0;
+            }
+        }
+
+        pOut();
+        pdebug( "leaving w/rv: $rv", PDLEVEL2 );
+
+        return $rv;
+    }
+
+    sub _getLogRef ($) {
+
+        # Purpose:  Gets the log function from the requested log module
+        # Returns:  Subroutine reference if the module was available,
+        #           otherwise undef
+        # Usage:    $subRef = _getLogRef($module);
+
+        my $module = ucfirst shift;
+
+        return exists $logRefs{$module} ? $logRefs{$module} : undef;
+    }
+
+    # This has consists of the name/array key/value pairs.  Each associated
+    # array consists of the following entries:
+    #        [ $name, $facility, $level, $scope, @optionalArgs].
+    my %loggers = ();
+
+    sub _addLog ($$$$;@) {
+
+        # Purpose:  Adds a named logger to our loggers hash.
+        # Returns:  True (1) if successful,
+        #           False (0) if there are any errors
+        # Usage:    $rv = _addLog($name, $level, $scope);
+
+        my $name     = shift;
+        my $facility = shift;
+        my $level    = shift;
+        my $scope    = shift;
+        my @args     = @_;
+        my $rv;
+
+        # Convert level synonyms
+        $level = _convertLevel($level);
+
+        # Make sure the module can be loaded
+        unless ( _loadModule( ucfirst $facility ) ) {
+            Paranoid::ERROR = perror(
+                "Couldn't load requested logging facility ($facility)!");
+            return 0;
+        }
+
+        # Make sure the entry does not exist
+        if ( exists $loggers{$name} ) {
+            return 0;
+        } else {
+            $loggers{$name} = [ $name, $facility, $level, $scope, @args ];
+            return 1;
+        }
+    }
+
+    sub _delLog ($) {
+
+        # Purpose:  Deletes a named logger from the hash.
+        # Returns:  True (1)
+        # Usage:    _delLog($name);
+
+        my $name = shift;
+
+        delete $loggers{$name} if exists $loggers{$name};
+
+        return 1;
+    }
+
+    # This hash gets populated in log level/logger names key/value pairs.
+    # I.e., emerg => [ logger1, logger2, ...n ]
+    my %distribution = ();
+
+    sub _getDistRef () {
+
+        # Purpose:  Returns a reference to the distribution hash
+        # Returns:  Hash reference
+        # Usage:    $href = _getDistribution();
+
+        return \%distribution;
+    }
+
+    sub clearLogDist () {
+
+        # Purpose:  Clears all distribution level arrays
+        # Returns:  True (1)
+        # Usage:    clearLogDist();
+
+        pdebug( 'entering', PDLEVEL1 );
+
+        %distribution = (
+            'emerg'  => [],
+            'alert'  => [],
+            'crit'   => [],
+            'err'    => [],
+            'warn'   => [],
+            'notice' => [],
+            'info'   => [],
+            'debug'  => [],
+        );
+
+        pdebug( 'leaving', PDLEVEL1 );
+
+        return 1;
+    }
+
+    sub initLogDist () {
+
+        # Purpose:  Goes through all named loggers and registers them at all
+        #           the applicable levels.
+        # Returns:  True (1)
+        # Usage:    initLogDist();
+
+        my @logNames = keys %loggers;
+        my %lndx     = (
+            'debug'  => 0,
+            'info'   => 1,
+            'notice' => 2,
+            'warn'   => 3,
+            'err'    => 4,
+            'crit'   => 5,
+            'alert'  => 6,
+            'emerg'  => 7,
+        );
+        my ( $l, $s, $n );
+
+        pdebug( 'entering', PDLEVEL1 );
+        pIn();
+
+        # Make sure %distribution is cleared
+        clearLogDist();
+
+        # Populate each log level applicable to each named logger
+        foreach (@logNames) {
+            ( $l, $s ) = @{ $loggers{$_} }[ 2, 3 ];
+            $n = $lndx{$l};
+
+            pdebug( "processing $_ ($s$l)", PDLEVEL2 );
+
+            # What level(s) should be set
+            if ( $s eq '=' ) {
+
+                # Only at the specified level
+                pdebug( "adding $_ to $l", PDLEVEL3 );
+                push @{ $distribution{$l} }, $loggers{$_};
+
+            } elsif ( $s eq '-' ) {
+
+                # Only at this level or lower
+                while ( $n >= 0 ) {
+                    pdebug( "adding $_ to $LEVELS[$n]", PDLEVEL3 );
+                    push @{ $distribution{ $LEVELS[$n] } }, $loggers{$_};
+                    $n--;
+                }
+
+            } elsif ( $s eq '+' ) {
+
+                # Only at this level or higher
+                while ( $n <= 7 ) {
+                    pdebug( "adding $_ to $LEVELS[$n]", PDLEVEL3 );
+                    push @{ $distribution{ $LEVELS[$n] } }, $loggers{$_};
+                    $n++;
+                }
+            }
+        }
+
+        pOut();
+        pdebug( 'leaving', PDLEVEL1 );
+
+        return 1;
+    }
+
+    my $hostname;
+
+    sub _getHostname () {
+
+        # Purpose:  Returns the hostname, defaulting to $localhost if
+        #           /bin/hostname is unusable
+        # Returns:  Hostname
+        # Usage:    $hostname = _getHostname();
+
+        my $fd;
+
+        # Return cached result
+        return $hostname if defined $hostname;
+
+        # Get the current hostname
+        if ( -x '/bin/hostname' ) {
+            if ( open $fd, '-|', '/bin/hostname' ) {
+                chomp( $hostname = <$fd> );
+                close $fd;
+            }
+        }
+
+        # Assign the default if the above code fails
+        $hostname = 'localhost'
+            unless defined $hostname and length $hostname;
+
+        return $hostname;
+    }
+
+}
+
+sub enableFacility ($$;$$@) {
+
+    # Purpose:  Enables the requested facilities at the specified levels
+    # Returns:  True (1) if the facility is available for use,
+    #           False (0) if there are any errors
+    # Usage:    $rv = enableFacility($name, $facility, $logLevel,
+    #               $scope, @args);
+
+    my $name     = shift;
+    my $facility = shift;
+    my $logLevel = shift;
+    my $scope    = shift;
+    my @args     = @_;
+    my $larg     = defined $logLevel ? $logLevel : 'undef';
+    my $sarg     = defined $scope ? $scope : 'undef';
+    my @scopes   = qw(= + -);
+    my $rv       = 0;
+
+    # Validate arguments
+    $logLevel = 'notice' unless defined $logLevel;
+    $scope    = '+'      unless defined $scope;
+    croak 'Mandatory first argument must be a defined name'
+        unless defined $name;
+    croak 'Mandatory second argument must be a defined log facility'
+        unless defined $facility;
+    croak 'Optional third argument must be a valid log level'
+        unless grep /^\Q$logLevel\E$/sm, @LEVELS;
+    croak 'Optional fourth argument must be a valid scope'
+        unless grep /^\Q$scope\E$/sm, @scopes;
+
+    pdebug( "entering w/($name)($facility)($larg)($sarg)", PDLEVEL1 );
+    pIn();
+
+    # Convert level synonyms
+    $logLevel = _convertLevel($logLevel);
+
+    # Add to named loggers
+    $rv = _addLog( $name, $facility, $logLevel, $scope, @args );
+
+    # Initialize distribution
+    initLogDist() if $rv;
+
+    pOut();
+    pdebug( "leaving w/rv: $rv", PDLEVEL1 );
+
+    return $rv;
+}
+
+sub disableFacility ($) {
+
+    # Purpose:  Disables and removes a facility from use.
+    # Returns:  True (1) if the facility was successfully removed,
+    #           False (0) if there are any errors
+    # Usage:    $rv = disableFacility($name);
+
+    my $name = shift;
+    my $rv;
+
+    croak 'Mandatory first argument must be a valid name'
+        unless defined $name;
+
+    pdebug( "entering w/($name)", PDLEVEL1 );
+    pIn();
+
+    $rv = _delLog($name);
+    initLogDist() if $rv;
+
+    pOut();
+    pdebug( "leaving w/rv: $rv", PDLEVEL1 );
+
+    return $rv;
+}
+
+sub plog ($$) {
+
+    # Purpose:  Logs the message to all facilities registered at that level
+    # Returns:  True (1) if the message was succesfully logged,
+    #           False (0) if there are any errors
+    # Usage:    $rv = plog($severity, $message);
+
+    my $severity = shift;
+    my $message  = shift;
+    my $dref     = _getDistRef();
+    my $msgtime  = time;
+    my $rv       = 1;
+    my ( $lref, $sref );
+
+    # Validate arguments
+    croak 'Mandatory first argument must be a valid severity'
+        unless defined $severity && grep /^\Q$severity\E$/sm, @LEVELS;
+    croak 'Mandatory second argument must be a defined message'
+        unless defined $message && ref $message eq '' && length $message;
+
+    pdebug( "entering w/($severity)($message)", PDLEVEL1 );
+    pIn();
+
+    # Convert level synonyms
+    $severity = _convertLevel($severity);
+
+    # Trim message length to traditional max syslog lengths
+    $message = substr $message, 0, 2048;
+
+    # Iterate over every entry in the severity array
+    foreach $lref ( @{ $$dref{$severity} } ) {
+
+        # Only process if the module is loaded
+        if ( _loadModule( $$lref[1] ) ) {
+            if ( $$lref[1] eq 'stderr' ) {
+                $rv = perror($message) ? 1 : 0;
+            } else {
+
+                # Get a reference the appropriate sub
+                $sref = _getLogRef( $$lref[1] );
+                $rv =
+                    defined $sref
+                    ? &$sref( $msgtime, $severity, $message, @$lref )
+                    : 0;
+            }
+        } else {
+            $rv = 0;
+        }
+    }
+
+    pOut();
+    pdebug( "leaving w/rv: $rv", PDLEVEL1 );
+
+    return $rv;
+}
+
+sub ptimestamp (;$) {
+
+    # Purpose:  Returns a syslog-stype timestamp string for the current or
+    #           passed time
+    # Returns:  String
+    # Usage:    $timestamp = ptimestamp();
+    # Usage:    $timestamp = ptimestamp($epoch);
+
+    my $utime  = shift;
+    my @months = qw(Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec);
+    my @ctime;
+
+    @ctime = defined $utime ? ( localtime $utime ) : (localtime);
+
+    return sprintf
+        '%s %2d %02d:%02d:%02d',
+        $months[ $ctime[4] ],
+        @ctime[ 3, 2, 1, 0 ];
+}
+
+sub psyslog ($$) {
+
+    # Purpose:  Calls plog with a syslog-style entry prepended to the message
+    # Returns:  The return value of the plog call
+    # Usage:    $rv = psyslog($severity, $message);
+
+    my $severity  = shift;
+    my $message   = shift;
+    my $timestamp = ptimestamp();
+    my $hostname  = _getHostname();
+    my ($pname) = ( $0 =~ m#^(?:.+/)?([^/]+)$#sm );
+    my $pid = $$;
+    my $rv;
+
+    # Validate arguments
+    croak 'Mandatory first argument must be a valid severity'
+        unless defined $severity;
+    croak 'Mandatory second argument must be a defined message'
+        unless defined $message && ref $message eq '' && length $message;
+
+    pdebug( "entering w/($severity)($message)", PDLEVEL1 );
+    pIn();
+
+    $rv = plog( $severity, sprintf '%s %s %s[%d]: %s',
+        $timestamp, $hostname, $pname, $pid, $message );
+
+    pOut();
+    pdebug( "leaving w/rv: $rv", PDLEVEL1 );
+
+    return $rv;
+}
+
+1;
+
+__END__
 
 =head1 NAME
 
 Paranoid::Log - Log Functions
 
-=head1 MODULE VERSION
+=head1 VERSION
 
-$Id: Log.pm,v 0.11 2008/08/28 06:36:44 acorliss Exp $
+$Id: Log.pm,v 0.13 2009/03/04 09:32:51 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -46,20 +569,6 @@ $Id: Log.pm,v 0.11 2008/08/28 06:36:44 acorliss Exp $
   initLogDist();
   $timeStamp = ptimestamp();
 
-=head1 REQUIREMENTS
-
-=over
-
-=item o
-
-Paranoid::Debug
-
-=item o
-
-Paranoid::Module
-
-=back
-
 =head1 DESCRIPTION
 
 This module provides a unified interface and distribution for multiple
@@ -72,6 +581,21 @@ e-mail.
 You can also use your own logging facility modules as long as you adhere to
 the expected API (detailed below).  Just pass the name of the module as the
 facility in B<enableFacility>.
+
+=head1 SYMBOL TAG SETS
+
+By default, only the following are exported:
+
+  enableFacility
+  disableFacility
+  plog
+  psyslog
+
+You can get everything using B<:all>, including:
+
+  clearLogDist 
+  initLogDist
+  ptimestamp
 
 =head1 LOGGING FACILITIES
 
@@ -100,214 +624,7 @@ facilities like the log buffer, in which case it dumps the contents of the
 named buffer.  Other uses for this is left to the developer of individual
 facility modules.
 
-=cut
-
-#####################################################################
-#
-# Environment definitions
-#
-#####################################################################
-
-package Paranoid::Log;
-
-use strict;
-use warnings;
-use vars qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS);
-use Exporter;
-use Paranoid::Debug;
-use Paranoid::Module;
-use Paranoid::Input;
-use Carp;
-
-($VERSION)    = (q$Revision: 0.11 $ =~ /(\d+(?:\.(\d+))+)/);
-
-@ISA          = qw(Exporter);
-@EXPORT       = qw(enableFacility   disableFacility   plog
-                   psyslog);
-@EXPORT_OK    = qw(enableFacility   disableFacility   clearLogDist 
-                   initLogDist      plog              ptimestamp
-                   psyslog);
-%EXPORT_TAGS  = (
-  all   => [qw(enableFacility   disableFacility   clearLogDist
-               initLogDist      plog              ptimestamp
-               psyslog)],
-  );
-
-my @LEVELS  = qw(debug info notice warn warning err error crit alert 
-                 emerg panic);
-
-# Taken from syslog.h
-#use constant LOG_EMERG      => 0;       # system is unusable
-#use constant LOG_ALERT      => 1;       # action must be taken immediately
-#use constant LOG_CRIT       => 2;       # critical conditions
-#use constant LOG_ERR        => 3;       # error conditions
-#use constant LOG_WARNING    => 4;       # warning conditions
-#use constant LOG_NOTICE     => 5;       # normal but significant condition
-#use constant LOG_INFO       => 6;       # informational
-#use constant LOG_DEBUG      => 7;       # debug-level messages
-
-#####################################################################
-#
-# Module code follows
-#
-#####################################################################
-
-=head1 FUNCTIONS
-
-=cut
-
-{
-
-  sub _convertLevel ($) {
-    # Converts level synonyms to their primary names
-    my $level   = shift;
-
-    return $level eq 'panic'   ? 'emerg' :
-           $level eq 'error'   ? 'err'   :
-           $level eq 'warning' ? 'warn'  :
-           $level;
-  }
-
-  # Stores whether them modules was loaded
-  my %loaded = ();
-
-  # Stores a reference to the module's log function
-  my %logRefs = ();
-
-  sub _loadModule ($) {
-    # Loads the requested module if it hasn't been already.  Attempts first
-    # to load the module relative to Paranoid::Log, or if that fails, as
-    # a stand-alone module.
-    #
-    # Usage:  $rv = _loadModule($module);
-
-    my $module    = ucfirst(shift);
-    my $sref;
-    my $rv;
-
-    pdebug("entering w/($module)", 10);
-    pIn();
-
-    # First attempt to load module under Paranoid::Log
-
-    # Return the status of the requested module if it was already
-    # autoloaded.
-    if (exists $loaded{$module}) {
-      $rv = $loaded{$module};
-
-    # Otherwise, try to load it now
-    } else {
-
-      # Detaint module name
-      if (detaint($module, 'filename', \$module)) {
-
-        # First attempt under the Paranoid::Log::* namespace
-        $rv = $module eq 'Stderr' ? 1 : 
-          loadModule("Paranoid::Log::$module", '') &&
-          eval "Paranoid::Log::${module}::init();" &&
-          eval "\$sref = \\&Paranoid::Log::${module}::log;" ? 1 :
-          0;
-
-        # Second attempt in its own namespace
-        unless ($rv) {
-          $rv = (loadModule($module, '') && eval "${module}::init();" &&
-            eval "\$sref = \\&${module}::log;") ? 1 : 0;
-        }
-
-        # Cache & report the results
-        if ($rv) {
-          $loaded{$module} = 1;
-          $logRefs{$module} = $sref;
-          pdebug("successfully loaded $module",
-            10);
-        } else {
-          $loaded{$module} = 0;
-          pdebug("failed to load $module", 10);
-        }
-
-      # Report any taint errors
-      } else {
-        Paranoid::ERROR = pdebug("failed to detaint module name", 9);
-        $rv = 0;
-      }
-    }
-
-    pOut();
-    pdebug("leaving w/rv: $rv", 10);
-
-    return $rv;
-  }
-
-  sub _getLogRef ($) {
-    # Returns the requested log function reference.
-    #
-    # Usage:  $ref = _getLogRef($module);
-
-    my $module      = ucfirst(shift);
-
-    return exists $logRefs{$module} ? $logRefs{$module} : undef;
-  }
-
-  # This has consists of the name/array key/value pairs.  Each associated
-  # array consists of the following entries: 
-  #        [ $name, $facility, $level, $scope, @optionalArgs].
-  my %loggers = ();
-
-  sub _addLog ($$$$;@) {
-    # Adds a named logger to the hash.  Returns true if successful, false if
-    # not, should that named entry already exist.
-    #
-    # Usage:  $rv = _addLog($name, $level, $scope);
-
-    my $name      = shift;
-    my $facility  = shift;
-    my $level     = shift;
-    my $scope     = shift;
-    my @args      = @_;
-    my $rv;
-
-    # Convert level synonyms
-    $level = _convertLevel($level);
-
-    # Make sure the module can be loaded
-    unless (_loadModule(ucfirst($facility))) {
-      Paranoid::ERROR = perror(
-        "Couldn't load requested logging facility ($facility)!");
-      return 0;
-    }
-
-    # Make sure the entry does not exist
-    if (exists $loggers{$name}) {
-      return 0;
-    } else {
-      $loggers{$name} = [$name, $facility, $level, $scope, @args];
-      return 1;
-    }
-  }
-
-  sub _delLog ($) {
-    # Removes the named logger from the hash.  Always returns true.
-    #
-    # Usage:  _delLog($name);
-
-    my $name = shift;
-
-    delete $loggers{$name} if exists $loggers{$name};
-
-    return 1;
-  }
-
-  # This hash gets populated in log level/logger names key/value pairs.
-  # I.e., emerg => [ logger1, logger2, ...n ]
-  my %distribution = ();
-
-  sub _getDistRef () {
-    # Returns a reference to the %distribution hash
-    #
-    # Usage:  $href = _getDistribution();
-
-    return \%distribution;
-  }
+=head1 SUBROUTINES/METHODS
 
 =head2 clearLogDist
 
@@ -320,25 +637,6 @@ processed.
 
 This can be used to temporarily halt all logging.
 
-=cut
-
-  sub clearLogDist () {
-    pdebug("entering", 9);
-
-    %distribution = (
-      'emerg'       => [],
-      'alert'       => [],
-      'crit'        => [],
-      'err'         => [],
-      'warn'        => [],
-      'notice'      => [],
-      'info'        => [],
-      'debug'       => [],
-      );
-
-    pdebug("leaving", 9);
-  }
-
 =head2 initLogDist
 
   initLogDist();
@@ -347,88 +645,6 @@ This goes through the list of named loggers and sets up the distribution
 processor to feed them the applicable log entries as they come in.
 
 This can be used to re-enable logging.
-
-=cut
-
-  sub initLogDist () {
-    my @logNames = keys %loggers;
-    my %lndx     = (
-      'debug'       => 0,
-      'info'        => 1,
-      'notice'      => 2,
-      'warn'        => 3,
-      'err'         => 4,
-      'crit'        => 5,
-      'alert'       => 6,
-      'emerg'       => 7,
-      );
-    my ($l, $s, $n);
-
-    pdebug("entering", 9);
-    pIn();
-
-    # Make sure %distribution is cleared
-    clearLogDist();
-
-    # Populate each log level applicable to each named logger
-    foreach (@logNames) {
-      ($l, $s) = @{ $loggers{$_} }[2,3];
-      $n       = $lndx{$l};
-
-      pdebug("processing $_ ($s$l)", 10);
-
-      # Set only the specified level
-      if ($s eq '=') {
-        pdebug("adding $_ to $l", 11);
-        push(@{ $distribution{$l} }, $loggers{$_});
-
-      # Set everything this level or lower priority
-      } elsif ($s eq '-') {
-        while ($n >= 0) {
-          pdebug("adding $_ to $LEVELS[$n]", 11);
-          push(@{ $distribution{$LEVELS[$n]} }, $loggers{$_});
-          $n--;
-        }
-
-      # Set everything this level or higher
-      } elsif ($s eq '+') {
-        while ($n <= 7) {
-          pdebug("adding $_ to $LEVELS[$n]", 11);
-          push(@{ $distribution{$LEVELS[$n]} }, $loggers{$_});
-          $n++;
-        }
-      }
-    }
-
-    pOut();
-    pdebug("leaving", 9);
-  }
-
-  my $hostname;
-
-  sub _getHostname () {
-    my $fd;
-
-    # Return cached result
-    return $hostname if defined $hostname;
-
-    # Get the current hostname
-    if (-x '/bin/hostname') {
-      if (open($fd, '/bin/hostname |')) {
-        chomp($hostname = <$fd>);
-        close($fd);
-      }
-    }
-
-    # Assign the default if the above code fails
-    $hostname = 'localhost' unless defined $hostname && 
-      length($hostname) > 0;
-
-    return $hostname;
-  }
-
-}
-
 
 =head2 enableFacility
 
@@ -494,76 +710,12 @@ facilities provided directly by B<Paranoid> are as follows:
   email           mailhost, recipient, sender (optional), 
                   subject (optional)
 
-=cut
-
-sub enableFacility ($$;$$@) {
-  my $name          = shift;
-  my $facility      = shift;
-  my $logLevel      = shift;
-  my $scope         = shift;
-  my @args          = @_;
-  my $larg          = defined $logLevel ? $logLevel : 'undef';
-  my $sarg          = defined $scope    ? $scope    : 'undef';
-  my @scopes        = qw(= + -);
-  my $rv            = 0;
-
-  # Validate arguments
-  $logLevel = 'notice' unless defined $logLevel;
-  $scope    = '+' unless defined $scope;
-  croak "Mandatory first argument must be a defined name" unless
-    defined $name;
-  croak "Mandatory second argument must be a defined log facility" unless
-    defined $facility;
-  croak "Optional third argument must be a valid log level" unless
-    grep /^\Q$logLevel\E$/, @LEVELS;
-  croak "Optional fourth argument must be a valid scope" unless
-    grep /^\Q$scope\E$/, @scopes;
-
-  pdebug("entering w/($name)($facility)($larg)($sarg)", 9);
-  pIn();
-
-  # Convert level synonyms
-  $logLevel = _convertLevel($logLevel);
-
-  # Add to named loggers
-  $rv = _addLog($name, $facility, $logLevel, $scope, @args);
-
-  # Initialize distribution
-  initLogDist() if $rv;
-
-  pOut();
-  pdebug("leaving w/rv: $rv", 9);
-
-  return $rv;
-}
-
 =head2 disableFacility
 
-  $rv = disableFacility($name)
+  $rv = disableFacility($name);
 
 Removes the specified logging facility from the configuration and
 re-initializes the distribution processor.
-
-=cut
-
-sub disableFacility ($) {
-  my $name          = shift;
-  my $rv;
-
-  croak "Mandatory first argument must be a valid name" unless
-    defined $name;
-
-  pdebug("entering w/($name)", 9);
-  pIn();
-
-  $rv = _delLog($name);
-  initLogDist() if $rv;
-
-  pOut();
-  pdebug("leaving w/rv: $rv", 9);
-
-  return $rv;
-}
 
 =head2 plog
 
@@ -572,59 +724,6 @@ sub disableFacility ($) {
 This call logs the passed message to all facilities enabled at the specified
 log level.
 
-=cut
-
-sub plog ($$) {
-  my $severity    = shift;
-  my $message     = shift;
-  my $dref        = _getDistRef();
-  my $msgtime     = time();
-  my $rv          = 1;
-  my ($lref, $sref);
-
-  # Validate arguments
-  croak "Mandatory first argument must be a valid severity" unless
-    defined $severity && grep /^\Q$severity\E$/, @LEVELS;
-  croak "Mandatory second argument must be a defined message" unless
-    defined $message && ref($message) eq "" && length($message);
-
-  pdebug("entering w/($severity)($message)", 9);
-  pIn();
-
-  # Convert level synonyms
-  $severity = _convertLevel($severity);
-
-  # Trim message length
-  $message = substr($message, 0, 2048);
-
-  # Iterate over every entry in the severity array
-  foreach $lref (@{ $$dref{$severity} }) {
-
-    # Only process if the module is loaded
-    if (_loadModule($$lref[1])) {
-      if ($$lref[1] eq 'stderr') {
-        $rv = perror($message) ? 1 : 0;
-      } else {
-        # Get a reference the appropriate sub
-        $sref = _getLogRef($$lref[1]);
-        $rv = defined $sref ? &$sref($msgtime, $severity, $message, @$lref) :
-          0;
-      }
-    } else {
-      $rv = 0;
-    }
-  }
-
-#      } elsif ($$lref[1] eq 'email') {
-#        $rv = 0 unless Paranoid::Log::Email::log($message, $msgtime);
-#      }
-
-  pOut();
-  pdebug("leaving w/rv: $rv", 9);
-
-  return $rv;
-}
-
 =head2 ptimestamp
 
   $ts = ptimestamp();
@@ -632,19 +731,6 @@ sub plog ($$) {
 This function returns a syslog-style timestamp string for the current time.
 You can optionally give it a value as returned by time() and the stamp will
 be for that timme.
-
-=cut
-
-sub ptimestamp (;$) {
-  my $utime   = shift;
-  my @months  = qw(Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec);
-  my @ctime;
-
-  @ctime = defined $utime ? (localtime($utime)) : (localtime);
-
-  return sprintf('%s %2d %02d:%02d:%02d', $months[ $ctime[4] ],
-    @ctime[3,2,1,0]);
-}
 
 =head2 psyslog
 
@@ -658,69 +744,86 @@ template:
   {timestamp} {hostname} {process}[{pid}]: {message}
 
 You may want to use this if you're using, say, a file logging mechanism but
-you still want the logs in a syslog-styled format.
+you still want the logs in a syslog-styled format.  More often than not,
+though, you do not want to use this function.
 
-=cut
+=head1 DEPENDENCIES
 
-sub psyslog ($$) {
-  my $severity    = shift;
-  my $message     = shift;
-  my $timestamp   = ptimestamp();
-  my $hostname    = _getHostname();
-  my ($pname)     = ($0 =~ m#^(?:.+/)?([^/]+)$#);
-  my $pid         = $$;
-  my $rv;
+=over
 
-  # Validate arguments
-  croak "Mandatory first argument must be a valid severity" unless
-    defined $severity;
-  croak "Mandatory second argument must be a defined message" unless
-    defined $message && ref($message) eq "" && length($message);
+=item o
 
-  pdebug("entering w/($severity)($message)", 9);
-  pIn();
+L<Paranoid::Debug>
 
-  $rv = plog($severity, sprintf('%s %s %s[%d]: %s', $timestamp, $hostname,
-    $pname, $pid, $message));
+=item o
 
-  pOut();
-  pdebug("leaving w/rv: $rv", 9);
+L<Paranoid::Input>
 
-  return $rv;
-}
+=item o
+
+L<Paranoid::Module>
+
+=back
 
 =head1 EXAMPLES
 
-=head2 Enabling various facilities
+The following example provides the following behavior:  debug messages go to a
+file, notice & above messages go to syslog, and critical and higher messages
+also go to console and e-mail.
 
-  # STDERR facility
-  $rv = enableFacility("console-err", "stderr", "warn", "+");
+  # Set up the logging facilities
+  enableFacility("debug", "file", "debug", "=", 
+    "/var/log/myapp-debug.log");
+  enableFacility("daemon", "syslog", "notice", "+", "myapp");
+  enableFacility("console-err", "stderr", "critical", "+");
+  enableFacility("smtp-err", "email", "critical", "+", 
+    "localhost", "root\@localhost", "myapp\@localhost", 
+    "MyApp Critical Alert");
 
-  # Log buffer w/100 message capacity
-  $rv = enableFacility("buffer1", "buffer", "warn", "=", 100);
+  # Log some messages
+  #
+  # Since this is only going to the debug log, we'll use psyslog 
+  # so we get the timestamps, etc.
+  psyslog("debug", "Starting application");
 
-  # Log file (/var/log/app-debug.log)
-  $rv = enableFacility("debug", "file", "warn", "=", 
-    "/var/log/app-debug.log");
+  # Log a notification
+  plog("notice", "Uh, something happened...");
 
-  # Syslog under mail facility
-  $rv = enableFacility("mail", "syslog", "warn", "+");
+  # Log a critical error
+  plog("emerg", "Ack! <choke... silence>");
 
-  # E-mail critical or higher errs
-  $rv = enableFacility("mail", "email", "crit", "+", "localhost",
-    'root@localhost', undef, 'Critical Alert');
+=head1 SEE ALSO
 
-=cut
+=over
 
-1;
+=item o
 
-=head1 HISTORY
+L<Paranoid::Log::Buffer>
 
-None as of yet.
+=item o
 
-=head1 AUTHOR/COPYRIGHT
+L<Paranoid::Log::Email>
 
-(c) 2005 Arthur Corliss (corliss@digitalmages.com)
+=item o
 
-=cut
+L<Paranoid::Log::File>
+
+=item o
+
+L<Paranoid::Log::Syslog>
+
+=back
+
+=head1 BUGS AND LIMITATIONS
+
+=head1 AUTHOR
+
+Arthur Corliss (corliss@digitalmages.com)
+
+=head1 LICENSE AND COPYRIGHT
+
+This software is licensed under the same terms as Perl, itself. 
+Please see http://dev.perl.org/licenses/ for more information.
+
+(c) 2005, Arthur Corliss (corliss@digitalmages.com)
 

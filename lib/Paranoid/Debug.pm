@@ -2,31 +2,173 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Debug.pm,v 0.9 2008/08/28 06:22:51 acorliss Exp $
+# $Id: Debug.pm,v 0.11 2009/03/04 09:32:51 acorliss Exp $
 #
-#    This program is free software; you can redistribute it and/or modify
-#    it under the terms of the GNU General Public License as published by
-#    the Free Software Foundation; either version 2 of the License, or
-#    any later version.
-#
-#    This program is distributed in the hope that it will be useful,
-#    but WITHOUT ANY WARRANTY; without even the implied warranty of
-#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#    GNU General Public License for more details.
-#
-#    You should have received a copy of the GNU General Public License
-#    along with this program; if not, write to the Free Software
-#    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+#    This software is licensed under the same terms as Perl, itself.
+#    Please see http://dev.perl.org/licenses/ for more information.
 #
 #####################################################################
+
+#####################################################################
+#
+# Environment definitions
+#
+#####################################################################
+
+package Paranoid::Debug;
+
+use strict;
+use warnings;
+use vars qw($VERSION @EXPORT @EXPORT_OK %EXPORT_TAGS);
+use base qw(Exporter);
+use Paranoid;
+
+use constant PDLEVEL1 => 9;
+use constant PDLEVEL2 => 10;
+use constant PDLEVEL3 => 11;
+use constant PDLEVEL4 => 12;
+
+($VERSION) = ( q$Revision: 0.11 $ =~ /(\d+(?:\.(\d+))+)/sm );
+
+@EXPORT    = qw(PDEBUG pdebug perror pIn pOut psetDebug PDPREFIX);
+@EXPORT_OK = qw(PDEBUG pdebug perror pIn pOut psetDebug PDPREFIX
+    PDLEVEL1 PDLEVEL2 PDLEVEL3 PDLEVEL4);
+%EXPORT_TAGS = (
+    all => [
+        qw(PDEBUG pdebug perror pIn pOut psetDebug PDPREFIX
+            PDLEVEL1 PDLEVEL2 PDLEVEL3 PDLEVEL4)
+           ],
+);
+
+#####################################################################
+#
+# Module code follows
+#
+#####################################################################
+
+{
+    my $ilevel = 0;    # Start with no identation
+    my $pdebug = 0;    # Start with debug output disabled
+
+    my $defprefix = sub {
+
+        # Default Prefix to use with debug messages looks like:
+        #
+        #   [PID - ILEVEL] Subroutine:
+        #
+        my $caller = ( caller 2 )[3];
+        my $prefix;
+
+        $caller = defined $caller ? $caller : 'undef';
+        $prefix = ' ' x $ilevel . "[$$-$ilevel] $caller: ";
+
+        return $prefix;
+    };
+    my $pdprefix = $defprefix;
+
+    sub PDEBUG : lvalue {
+        $pdebug;
+    }
+
+    sub ILEVEL : lvalue {
+        $ilevel;
+    }
+
+    sub PDPREFIX : lvalue {
+        $pdprefix;
+    }
+}
+
+sub perror ($) {
+
+    # Purpose:  Print passed string to STDERR
+    # Returns:  Return value from print function
+    # Usage:    $rv = perror("Foo!");
+
+    my $msg = shift;
+
+    return print STDERR "$msg\n";
+}
+
+sub pdebug ($;$) {
+
+    # Purpose:  Calls perror() if the message level is less than or equal to
+    #           the value of PDBEBUG, after prepending the string returned by
+    #           the PDPREFIX routine, if defined
+    # Returns:  Always returns the passed message, regardless of PDEBUG's
+    #           value
+    # Usage:    pdebug($message, $level);
+
+    my $msg    = shift;
+    my $level  = shift || 1;
+    my $prefix = PDPREFIX;
+
+    return $msg if $level > PDEBUG;
+
+    # Execute the code block, if that's what it is
+    $prefix = &$prefix() if ref($prefix) eq 'CODE';
+
+    perror("$prefix$msg");
+
+    return $msg;
+}
+
+sub pIn () {
+
+    # Purpose:  Increases indentation level
+    # Returns:  Always True (1)
+    # Usage:    pIn();
+
+    my $i = ILEVEL;
+    ILEVEL = ++$i;
+
+    return 1;
+}
+
+sub pOut () {
+
+    # Purpose:  Decreases indentation level
+    # Returns:  Always True (1)
+    # Usage:    pOut();
+
+    my $i = ILEVEL;
+    ILEVEL = --$i if $i >= 0;
+
+    return 1;
+}
+
+# TODO:  Kill this freaking thing (psetDebug)
+
+sub psetDebug (@) {
+
+    # Purpose:  Set PDEBUG equal to the number of 'v's in '-v...'
+    # Returns:  PDEBUG (after counting v's)
+    # Usage:    psetDebug(@ARGV);
+
+    my @args = @_;
+    my $v;
+
+    # Extract all ^-v+$ arguments
+    $v = join '', grep /^-v+$/sm, @args;
+    $v =~ s/-//smg;
+
+    # Set debug level
+    PDEBUG = length $v;
+
+    return PDEBUG;
+}
+
+1;
+
+__END__
 
 =head1 NAME
 
 Paranoid::Debug - Trace message support for paranoid programs
 
-=head1 MODULE VERSION
+=head1 VERSION
 
-$Id: Debug.pm,v 0.9 2008/08/28 06:22:51 acorliss Exp $
+$Id: Debug.pm,v 0.11 2009/03/04 09:32:51 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -38,24 +180,18 @@ $Id: Debug.pm,v 0.9 2008/08/28 06:22:51 acorliss Exp $
   foo();
 
   sub foo {
-    pIn();
     pdebug("entering foo()", 2);
+    pIn();
+
+    pdebug("someting happened!", 2);
+
     pOut();
+    pdebug("leaving w/rv: $rv", 2):
   }
 
   perror("error msg");
 
   psetDebug(@ARGV);
-
-=head1 REQUIREMENTS
-
-=over
-
-=item o
-
-Paranoid
-
-=back
 
 =head1 DESCRIPTION
 
@@ -77,98 +213,30 @@ B<NOTE:> All modules within the Paranoid framework use this module.  Their
 debug levels range from 9 and up.  You should use 1 - 8 for your own modules
 or code.
 
-=cut
-
-#####################################################################
-#
-# Environment definitions
-#
-#####################################################################
-
-package Paranoid::Debug;
-
-use strict;
-use warnings;
-use vars qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS);
-use Exporter;
-use Paranoid;
-
-($VERSION)    = (q$Revision: 0.9 $ =~ /(\d+(?:\.(\d+))+)/);
-
-@ISA          = qw(Exporter);
-@EXPORT       = qw(PDEBUG pdebug perror pIn pOut psetDebug);
-@EXPORT_OK    = qw(PDEBUG pdebug perror pIn pOut psetDebug);
-%EXPORT_TAGS  = (
-  all => [qw(PDEBUG pdebug perror pIn pOut psetDebug)],
-  );
-
-#####################################################################
-#
-# Module code follows
-#
-#####################################################################
-
-=head1 VARIABLES
+=head1 SUBROUTINES/METHODS
 
 =head2 PDEBUG
 
-B<PDEBUG> is initially 0, but can be set to any positive integer.  The higher
-the number the higher the level of pdebug statements are printed.
+B<PDEBUG> is an lvalue subroutine which is initially set to 0, but can be 
+set to any positive integer.  The higher the number the higher the level 
+of pdebug statements are printed.
 
 =head2 PDPREFIX
 
-B<PDPREFIX> is set, by default to a subroutine that produces the standard
-prefix for debug messages:
+B<PDPREFIX> is also an lvalue subroutien and is set by default to a 
+subroutine that returns as a string the standard prefix for debug 
+messages:
 
   [PID - ILEVEL] Subroutine:
 
-=cut
-
-{
-  my $ILEVEL = 0;   # Start with no identation
-  my $PDEBUG = 0;   # Start with debug output disabled
-
-  my $DEFPREFIX = sub {
-
-    # Default Prefix to use with debug messages looks like:
-    #
-    #   [PID - ILEVEL] Subroutine:
-    #
-    my $caller = (caller(2))[3];
-    my $prefix;
-
-    $caller = defined $caller ? $caller : 'undef';
-    $prefix = ' ' x $ILEVEL . "[$$-$ILEVEL] $caller: ";
-
-    return $prefix;
-    };
-  my $PDPREFIX = $DEFPREFIX;
-
-  sub PDEBUG   : lvalue { $PDEBUG };
-  sub ILEVEL   : lvalue { $ILEVEL };
-  sub PDPREFIX : lvalue { $PDPREFIX };
-}
-
-# TODO: Add a function to set the debug level from the specified argument on
-# TODO: the command line.
-
-# TODO: Add another flag to report the PID w/error messages
-
-=head1 FUNCTIONS
+Assigning another subroutine reference to a subroutine can override this 
+behavior.
 
 =head2 perror
 
   perror("error msg");
 
 This function prints the passed message to STDERR.
-
-=cut
-
-sub perror ($) {
-  my $msg = shift;
-
-  print STDERR "$msg\n";
-}
 
 =head2 pdebug
 
@@ -183,23 +251,6 @@ single statement to produce debug output and set variables.  For instance:
 
   Paranoid::ERROR = pdebug("Something bad happened!", 3);
 
-=cut
-
-sub pdebug ($;$) {
-  my $msg = shift;
-  my $level = shift || 1;
-  my $prefix = PDPREFIX;
-
-  return $msg if $level > PDEBUG;
-
-  # Execute the code block, if that's what it is
-  $prefix = &$prefix() if ref($prefix) eq 'CODE';
-
-  perror("$prefix$msg");
-
-  return $msg;
-}
-
 =head2 pIn
 
   pIn();
@@ -207,26 +258,12 @@ sub pdebug ($;$) {
 This function causes all subsequent pdebug messages to be indented by one
 additional space.
 
-=cut
-
-sub pIn () {
-  my $i = ILEVEL;
-  ILEVEL = ++$i;
-}
-
 =head2 pOut
 
   pOut();
 
 This function causes all subsequent pdebug messages to be indented by one
 less space.
-
-=cut
-
-sub pOut () {
-  my $i = ILEVEL;
-  ILEVEL = --$i;
-}
 
 =head2 psetDebug
 
@@ -236,31 +273,31 @@ This function extracts all ^-v+$ arguments from the passed list and counts the
 number of 'v's that result, and sets B<PDEBUG> to that count.  You would
 typically use this by passing @ARGV for command-line programs.
 
-=cut
+B<NOTE>:  This was a dumb idea of incredible proportions.  As soons as it is
+safe to do so I will kill this function and perform my penance before the gods
+of bitrot.  Consider this deprecated.
 
-sub psetDebug (@) {
-  my @args = @_;
-  my $v;
+=head1 DEPENDENCIES
 
-  # Extract all ^-v+$ arguments
-  $v = join('', grep(/^-v+$/, @args));
-  $v =~ s/-//g;
+L<Paranoid>
 
-  # Set debug level
-  PDEBUG = length($v);
+=head1 BUGS AND LIMITATIONS
 
-  return length($v);
-}
+B<perror> (and by extension, B<pdebug>) will generate errors if STDERR is
+closed elsewhere in the program.
 
-1;
+There is also no upper limit on how much indentation will be used by the
+program, so if you're using B<pIn> in deeply recursive call stacks you can
+expect some overhead due some rather large strings being bandied about.
 
-=head1 HISTORY
-
-None as of yet.
-
-=head1 AUTHOR/COPYRIGHT
+=head1 AUTHOR
 
 (c) 2005 Arthur Corliss (corliss@digitalmages.com)
 
-=cut
+=head1 LICENSE AND COPYRIGHT
+
+This software is licensed under the same terms as Perl, itself. 
+Please see http://dev.perl.org/licenses/ for more information.
+
+(c) 2005, Arthur Corliss (corliss@digitalmages.com)
 

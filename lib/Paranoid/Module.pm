@@ -2,58 +2,12 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Module.pm,v 0.3 2008/08/28 06:37:38 acorliss Exp $
+# $Id: Module.pm,v 0.5 2009/03/04 09:32:51 acorliss Exp $
 #
-#    This program is free software; you can redistribute it and/or modify
-#    it under the terms of the GNU General Public License as published by
-#    the Free Software Foundation; either version 2 of the License, or
-#    any later version.
-#
-#    This program is distributed in the hope that it will be useful,
-#    but WITHOUT ANY WARRANTY; without even the implied warranty of
-#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#    GNU General Public License for more details.
-#
-#    You should have received a copy of the GNU General Public License
-#    along with this program; if not, write to the Free Software
-#    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+#    This software is licensed under the same terms as Perl, itself.
+#    Please see http://dev.perl.org/licenses/ for more information.
 #
 #####################################################################
-
-=head1 NAME
-
-Paranoid::Module -- Paranoid Module Loading Routines
-
-=head1 MODULE VERSION
-
-$Id: Module.pm,v 0.3 2008/08/28 06:37:38 acorliss Exp $
-
-=head1 SYNOPSIS
-
-  use Paranoid::Module;
-
-  $rv = loadModule($module, qw(:all));
-
-=head1 REQUIREMENTS
-
-=over
-
-=item o
-
-Paranoid
-
-=item o
-
-Paranoid::Debug
-
-=back
-
-=head1 DESCRIPTION
-
-This provides a single function that allows you to do dynamic loading of
-modules at runtime.
-
-=cut
 
 #####################################################################
 #
@@ -63,23 +17,22 @@ modules at runtime.
 
 package Paranoid::Module;
 
+use 5.006;
+
 use strict;
 use warnings;
-use vars qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS);
-use Exporter;
+use vars qw($VERSION @EXPORT @EXPORT_OK %EXPORT_TAGS);
+use base qw(Exporter);
 use Paranoid;
-use Paranoid::Debug;
+use Paranoid::Debug qw(:all);
 use Paranoid::Input;
 use Carp;
 
-($VERSION)    = (q$Revision: 0.3 $ =~ /(\d+(?:\.(\d+))+)/);
+($VERSION) = ( q$Revision: 0.5 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
-@ISA          = qw(Exporter);
-@EXPORT       = qw(loadModule);
-@EXPORT_OK    = qw(loadModule);
-%EXPORT_TAGS  = (
-  all => [qw(loadModule)],
-  );
+@EXPORT      = qw(loadModule);
+@EXPORT_OK   = qw(loadModule);
+%EXPORT_TAGS = ( all => [qw(loadModule)], );
 
 #####################################################################
 #
@@ -87,13 +40,111 @@ use Carp;
 #
 #####################################################################
 
-=head1 FUNCTIONS
-
-=cut
-
 {
+    my %tested;    # Hash of module names => boolean (load success)
 
-  my %tested;       # Hash of module names => boolean (load success)
+    sub loadModule ($;@) {
+
+        # Purpose:  Attempts to load a module via an eval.  Caches the
+        #           result
+        # Returns:  True (1) if the module was successfully loaded,
+        #           False (0) if there are any errors
+        # Usage:    $rv = loadModule($moduleName);
+
+        my $module = shift;
+        my @args   = @_;
+        my $rv     = 0;
+        my $a      = @args ? join ' ', @args : '';
+        my $caller = scalar caller;
+        my $c      = defined $caller ? $caller : 'undef';
+        my $m;
+
+        croak 'Mandatory first argument must be a defined module name'
+            unless defined $module;
+
+        pdebug( "entering w/($module)($a)", PDLEVEL1 );
+        pIn();
+
+        # Debug info
+        pdebug( "calling package: $c", PDLEVEL2 );
+
+        # Detaint module name
+        if ( detaint( $module, 'filename', \$m ) ) {
+            $module = $m;
+        } else {
+            Paranoid::ERROR =
+                pdebug( 'failed to detaint module name' . " ($module)",
+                PDLEVEL1 );
+            $tested{$module} = 0;
+        }
+
+        # Skip if we've already done this
+        unless ( exists $tested{$module} ) {
+
+            # Try to load it
+            $tested{$module} = eval "require $module; 1;" ? 1 : 0;
+
+        }
+
+        # Try to import symbol sets if requested
+        if ( $tested{$module} && defined $caller ) {
+
+            if (@args) {
+
+                # Import requested symbol (sets)
+                eval << "EOF";
+{
+  package $caller;
+  import $module qw(@{[ join(' ', @args) ]});
+  1;
+}
+EOF
+
+            } else {
+
+                # Import default symbols if no args passed
+                eval << "EOF";
+{
+  package $caller;
+  import $module;
+  1;
+}
+EOF
+            }
+        }
+
+        pOut();
+        pdebug( "leaving w/rv: $tested{$module}", PDLEVEL1 );
+
+        # Return result
+        return $tested{$module};
+    }
+}
+
+1;
+
+__END__
+
+=head1 NAME
+
+Paranoid::Module -- Paranoid Module Loading Routines
+
+=head1 VERSION
+
+$Id: Module.pm,v 0.5 2009/03/04 09:32:51 acorliss Exp $
+
+=head1 SYNOPSIS
+
+  use Paranoid::Module;
+
+  $rv = loadModule($module, qw(:all));
+
+=head1 DESCRIPTION
+
+This provides a single function that allows you to do dynamic loading of
+modules at runtime.
+
+=head1 SUBROUTINES/METHODS
 
 =head2 loadModule
 
@@ -104,86 +155,30 @@ use with the import function.  Returns a true or false depending
 whether the require was successful.  We do not currently
 track the return value of the import function.
 
-=cut
+=head1 DEPENDENCIES
 
-  sub loadModule ($;@) {
-    my $module  = shift;
-    my @args    = @_;
-    my $rv      = 0;
-    my $a       = @args ? join(' ', @args) : '';
-    my $caller  = scalar caller;
-    my $c       = defined $caller ? $caller : 'undef';
-    my ($string, $m);
+=over
 
-    croak "Mandatory first argument must be a defined module name" unless
-      defined $module;
+=item o
 
-    pdebug("entering w/($module)($a)", 9);
-    pIn();
+L<Paranoid>
 
-    # Debug info
-    pdebug("calling package: $c", 10);
+=item o
 
-    # Detaint module name
-    if (detaint($module, 'filename', \$m)) {
-      $module = $m;
-    } else {
-      Paranoid::ERROR = pdebug("failed to detaint module name", 9);
-      $tested{$module} = 0;
-    }
+L<Paranoid::Debug>
 
-    # Skip if we've already done this
-    unless (exists $tested{$module}) {
+=back
 
-      # Try to load it
-      $tested{$module} = eval "require $module; 1;" ? 1 : 0;
+=head1 BUGS AND LIMITATIONS
 
-    }
+=head1 AUTHOR
 
-    # Try to import symbol sets if requested
-    if ($tested{$module} && defined $caller) {
+Arthur Corliss (corliss@digitalmages.com)
 
-      # Import requested symbol (sets)
-      if (@args) {
-        eval << "EOF";
-{
-  package $caller;
-  import $module qw(@{[ join(' ', @args) ]});
-  1;
-}
-EOF
+=head1 LICENSE AND COPYRIGHT
 
-      # Import default symbols if no args passed
-      } else {
-        eval << "EOF";
-{
-  package $caller;
-  import $module;
-  1;
-}
-EOF
-      }
-    }
+This software is licensed under the same terms as Perl, itself. 
+Please see http://dev.perl.org/licenses/ for more information.
 
-    pOut();
-    pdebug("leaving w/rv: $tested{$module}", 9);
-
-    # Return result
-    return $tested{$module};
-  }
-}
-
-1;
-
-=head1 HISTORY
-
-None as of yet.
-
-=head1 AUTHOR/COPYRIGHT
-
-(c) 2005 Arthur Corliss (corliss@digitalmages.com)
-
-=cut
-
-
+(c) 2005, Arthur Corliss (corliss@digitalmages.com)
 

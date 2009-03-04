@@ -2,67 +2,12 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Email.pm,v 0.6 2008/08/28 06:39:53 acorliss Exp $
+# $Id: Email.pm,v 0.7 2009/03/04 09:32:51 acorliss Exp $
 #
-#    This program is free software; you can redistribute it and/or modify
-#    it under the terms of the GNU General Public License as published by
-#    the Free Software Foundation; either version 2 of the License, or
-#    any later version.
-#
-#    This program is distributed in the hope that it will be useful,
-#    but WITHOUT ANY WARRANTY; without even the implied warranty of
-#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#    GNU General Public License for more details.
-#
-#    You should have received a copy of the GNU General Public License
-#    along with this program; if not, write to the Free Software
-#    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+#    This software is licensed under the same terms as Perl, itself.
+#    Please see http://dev.perl.org/licenses/ for more information.
 #
 #####################################################################
-
-=head1 NAME
-
-Paranoid::Log::Email - Log Facility Email
-
-=head1 MODULE VERSION
-
-$Id: Email.pm,v 0.6 2008/08/28 06:39:53 acorliss Exp $
-
-=head1 SYNOPSIS
-
-  use Paranoid::Log::Email;
-
-  $rv = init();
-  $rv = remove($name);
-
-  $rv = log($msgtime, $severity, $message, $name, $facility, $level, $scope,
-            $mailhost, $recipient, $sender, $subject);
-
-=head1 REQUIREMENTS
-
-=over
-
-=item o
-
-Paranoid::Debug
-
-=item o
-
-Net::SMTP
-
-=back
-
-=head1 DESCRIPTION
-
-This is a template for logging facilities which can be used by
-B<Paranoid::Log>.  The functions above are the minimum required for proper
-operation.  For specific examples please see the actual facilities bundled
-with the the Paranoid modules.
-
-These modules are typically not meant to be used directly, but through the
-B<Paranoid::Log> interface only.
-
-=cut
 
 #####################################################################
 #
@@ -75,12 +20,12 @@ package Paranoid::Log::Email;
 use strict;
 use warnings;
 use vars qw($VERSION);
-use Paranoid::Debug;
+use Paranoid::Debug qw(:all);
 use Carp;
 use Net::SMTP;
 use Net::Domain qw(hostfqdn);
 
-($VERSION)    = (q$Revision: 0.6 $ =~ /(\d+(?:\.(\d+))+)/);
+($VERSION) = ( q$Revision: 0.7 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 #####################################################################
 #
@@ -88,90 +33,82 @@ use Net::Domain qw(hostfqdn);
 #
 #####################################################################
 
-=head1 FUNCTIONS
+sub init () {
 
-=head2 init
+    # Purpose:  Exists purely for compliance.
+    # Returns:  True (1)
+    # Usage:    init();
 
-  $rv = init();
-
-This function is called the first time a logging facility is activated.  You
-can use it to initialize an internal data structures necessary for proper
-operation.
-
-=cut
-
-sub init() {
-  return 1;
+    return 1;
 }
 
-=head2 remove
+sub remove ($) {
 
-  $rv = remove($name);
+    # Purpose:  Exists purely for compliance.
+    # Returns:  True (1)
+    # Usage:    init();
 
-This function is called to deactivate a named instance of the logging
-facility.
-
-=cut
-
-sub remove($) {
-  my $name = shift;
-
-  return 1;
+    return 1;
 }
 
-=head2 log
+sub log ($$$$$$$$$;$$) {
 
-  $rv = log($msgtime, $severity, $message, $name, $facility, $level, $scope,
-            $mailhost, $recipient, $sender, $subject);
+    # Purpose:  Mails the passed message to the named recipient
+    # Returns:  True (1) if successful, False (0) if not
+    # Usage:    log($msgtime, $severity, $message, $name, $facility, $level,
+    #               $scope);
+    # Usage:    log($msgtime, $severity, $message, $name, $facility, $level,
+    #               $scope, $mailhost);
+    # Usage:    log($msgtime, $severity, $message, $name, $facility, $level,
+    #               $scope, $mailhost, $recipient);
+    # Usage:    log($msgtime, $severity, $message, $name, $facility, $level,
+    #               $scope, $mailhost, $recipient, $sender);
+    # Usage:    log($msgtime, $severity, $message, $name, $facility, $level,
+    #               $scope, $mailhost, $recipient, $sender, $subject);
 
-This function adds another log message to the log file.  This is 
-not meant to be used directly.  Please use the B<Paranoid::Log> module.  Any
-errors which occur during the e-mail transaction are stored in
-B<Paranoid::ERROR>.
+    my $msgtime   = shift;
+    my $severity  = shift;
+    my $message   = shift;
+    my $name      = shift;
+    my $facility  = shift;
+    my $level     = shift;
+    my $scope     = shift;
+    my $mailhost  = shift;
+    my $recipient = shift;
+    my $sender    = shift;
+    my $subject   = shift;
+    my $m         = defined $mailhost ? $mailhost : 'undef';
+    my $r         = defined $recipient ? $recipient : 'undef';
+    my $s1        = defined $sender ? $sender : 'undef';
+    my $s2        = defined $subject ? $subject : 'undef';
+    my $rv        = 0;
+    my ( $smtp, $hostname, $data );
 
-=cut
+    # Validate arguments
+    croak 'Mandatory third argument must be a valid message'
+        unless defined $message;
 
-sub log($$$$$$$$$;$$) {
-  my $msgtime   = shift;
-  my $severity  = shift;
-  my $message   = shift;
-  my $name      = shift;
-  my $facility  = shift;
-  my $level     = shift;
-  my $scope     = shift;
-  my $mailhost  = shift;
-  my $recipient = shift;
-  my $sender    = shift;
-  my $subject   = shift;
-  my $m         = defined $mailhost  ? $mailhost  : 'undef';
-  my $r         = defined $recipient ? $recipient : 'undef';
-  my $s1        = defined $sender    ? $sender    : 'undef';
-  my $s2        = defined $subject   ? $subject   : 'undef';
-  my $rv        = 0;
-  my ($smtp, $hostname, $data);
+    pdebug(
+        "entering w/($msgtime)($severity)($message)($name)"
+            . "($facility)($level)($scope)($m)($r)($s1)($s2)",
+        PDLEVEL1
+    );
+    pIn();
 
-  # Validate arguments
-  croak "Mandatory third argument must be a valid message" unless defined
-    $message;
+    # We need a mailhost and recipient at a minimum
+    if ( defined $mailhost && defined $recipient ) {
 
-  pdebug("entering w/($msgtime)($severity)($message)($name)" .
-    "($facility)($level)($scope)($m)($r)($s1)($s2)", 9);
-  pIn();
+        # Get the system hostname
+        $hostname = hostfqdn();
 
-  # Only try if the mailhost/sender is defined
-  if (defined $mailhost && defined $recipient) {
+        # Make sure something is set for the sender
+        $sender = "$ENV{USER}\@$hostname" unless defined $sender;
 
-    # Get the system hostname
-    $hostname = hostfqdn();
+        # Make sure something is set for the subject
+        $subject = "ALERT from $ENV{USER}\@$hostname" unless defined $subject;
 
-    # Make sure something is set for the sender
-    $sender = "$ENV{USER}\@$hostname" unless defined $sender;
-
-    # Make sure something is set for the subject
-    $subject = "ALERT from $ENV{USER}\@$hostname" unless defined $subject;
-
-    # Compose the data block
-    $data = << "__EOF__";
+        # Compose the data block
+        $data = << "__EOF__";
 To:      @{[ ref($recipient) eq 'ARRAY' ? join(', ', @$recipient) : $recipient ]}
 From:    $sender
 Subject: $subject
@@ -184,65 +121,153 @@ $message
 
 __EOF__
 
-    pdebug("sending to $recipient to $mailhost", 10);
+        pdebug( "sending to $recipient to $mailhost", PDLEVEL2 );
 
-    # Try to open an SMTP connection
-    if ($smtp = Net::SMTP->new($mailhost, Timeout => 30)) {
+        # Try to open an SMTP connection
+        if ( $smtp = Net::SMTP->new( $mailhost, Timeout => 30 ) ) {
 
-      # Start the transaction
-      if ($smtp->mail($sender)) {
+            # Start the transaction
+            if ( $smtp->mail($sender) ) {
 
-        # Send to all recipients
-        if (ref($recipient) eq 'ARRAY') {
-          foreach (@$recipient) { 
-            Paranoid::ERROR = pdebug("server rejected recipient: $_", 9)
-             unless $smtp->to($_) };
+                # Send to all recipients
+                if ( ref $recipient eq 'ARRAY' ) {
+                    foreach (@$recipient) {
+                        Paranoid::ERROR =
+                            pdebug( "server rejected recipient: $_",
+                            PDLEVEL1 )
+                            unless $smtp->to($_);
+                    }
+                } else {
+                    Paranoid::ERROR =
+                        pdebug( "server rejected recipient: $recipient",
+                        PDLEVEL1 )
+                        unless $smtp->to($recipient);
+                }
+
+                # Send the message
+                $rv = $smtp->data($data);
+
+                # Log the error
+            } else {
+                Paranoid::ERROR =
+                    pdebug( "server rejected sender: $sender", PDLEVEL1 );
+                $rv = 0;
+            }
+
+            # Close the connection
+            $smtp->quit;
+
         } else {
-          Paranoid::ERROR = pdebug("server rejected recipient: $recipient", 9)
-            unless $smtp->to($recipient);
+
+            # Failed to connect to the server!
+            Paranoid::ERROR =
+                pdebug( "couldn't connect to server: $mailhost", PDLEVEL1 );
+            $rv = 0;
         }
 
-        # Send the message
-        $rv = $smtp->data($data);
-
-      # Log the error
-      } else {
-        Paranoid::ERROR = pdebug("server rejected sender: $sender", 9);
-      }
-
-      # Close the connection
-      $smtp->quit;
     } else {
-      Paranoid::ERROR = pdebug("couldn't connect to server: $mailhost", 9);
+
+        # Who the hell activated this facility without at least that?!
+        Paranoid::ERROR = pdebug(
+            'Message logged with e-mail facility, but we have '
+                . 'neither a mailhost or a recipient to send to -- ignoring',
+            PDLEVEL1
+        );
+        $rv = 0;
     }
-  }
 
-  pOut();
-  pdebug("leaving w/rv: $rv", 9);
+    pOut();
+    pdebug( "leaving w/rv: $rv", PDLEVEL1 );
 
-  return $rv;
+    return $rv;
 }
 
-sub dump($) {
-  # This function is present only for compliance.
-  my $name    = shift;
+sub dump ($) {
 
-  return ();
+    # Purpose:  Exists purely for compliance.
+    # Returns:  True (1)
+    # Usage:    init();
+
+    return ();
 }
 
 1;
 
+__END__
+
+=head1 NAME
+
+Paranoid::Log::Email - Log Facility Email
+
+=head1 VERSION
+
+$Id: Email.pm,v 0.7 2009/03/04 09:32:51 acorliss Exp $
+
+=head1 SYNOPSIS
+
+  use Paranoid::Log;
+  
+  enableFacility('crit-alert', 'email', 'debug', '+', $mailhost, 
+    $recipient);
+  enableFacility('crit-alert', 'email', 'debug', '+', $mailhost, 
+    [ @recipients ]);
+  enableFacility('crit-alert', 'email', 'debug', '+', $mailhost, 
+    $recipient, $sender, $subject);
+
+=head1 DESCRIPTION
+
+This module implements an e-mail transport for messages sent to the logger.
+It supports one or more recipients as well as overriding the sender address
+and subject line.  It also supports connecting to a remote mail server.
+
+=head1 DEPENDENCIES
+
+=over
+
+=item o
+
+L<Net::SMTP>
+
+=item o
+
+L<Net::Domain>
+
+=item o
+
+L<Paranoid::Debug>
+
+=back
+
+=head1 SUBROUTINES/METHODS
+
+B<NOTE>:  Given that this module is not intended to be used directly nothing
+is exported.
+
 =head1 SEE ALSO
 
-Paranoid::Log(3)
+=over
 
-=head1 HISTORY
+=item o
 
-None as of yet.
+L<Paranoid::Log>
 
-=head1 AUTHOR/COPYRIGHT
+=back
 
-(c) 2005 Arthur Corliss (corliss@digitalmages.com)
+=head1 BUGS AND LIMITATIONS
 
-=cut
+No validation of any information, be it the mail server, recipient, or
+anything else is done until a message actually needs to be sent.  Because of
+this you may have no warning of any misconfigurations just by enabling the
+facility.
+
+=head1 AUTHOR
+
+Arthur Corliss (corliss@digitalmages.com)
+
+=head1 LICENSE AND COPYRIGHT
+
+This software is licensed under the same terms as Perl, itself. 
+Please see http://dev.perl.org/licenses/ for more information.
+
+(c) 2005, Arthur Corliss (corliss@digitalmages.com)
 

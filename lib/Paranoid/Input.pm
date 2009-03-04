@@ -2,31 +2,322 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Input.pm,v 0.12 2008/08/28 06:35:28 acorliss Exp $
+# $Id: Input.pm,v 0.14 2009/03/04 09:32:51 acorliss Exp $
 #
-#    This program is free software; you can redistribute it and/or modify
-#    it under the terms of the GNU General Public License as published by
-#    the Free Software Foundation; either version 2 of the License, or
-#    any later version.
-#
-#    This program is distributed in the hope that it will be useful,
-#    but WITHOUT ANY WARRANTY; without even the implied warranty of
-#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#    GNU General Public License for more details.
-#
-#    You should have received a copy of the GNU General Public License
-#    along with this program; if not, write to the Free Software
-#    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+#    This software is licensed under the same terms as Perl, itself.
+#    Please see http://dev.perl.org/licenses/ for more information.
 #
 #####################################################################
+
+#####################################################################
+#
+# Environment definitions
+#
+#####################################################################
+
+package Paranoid::Input;
+
+use 5.006;
+
+use strict;
+use warnings;
+use vars qw($VERSION @EXPORT @EXPORT_OK %EXPORT_TAGS);
+use base qw(Exporter);
+use Fcntl qw(:flock);
+use Paranoid;
+use Paranoid::Debug qw(:all);
+use Carp;
+
+($VERSION) = ( q$Revision: 0.14 $ =~ /(\d+(?:\.(\d+))+)/sm );
+
+@EXPORT    = qw(FSZLIMIT       slurp     detaint     stringMatch);
+@EXPORT_OK = qw(FSZLIMIT       slurp     detaint     stringMatch
+    addTaintRegex);
+%EXPORT_TAGS = (
+    all => [
+        qw(FSZLIMIT       slurp     detaint     stringMatch
+            addTaintRegex)
+           ],
+);
+
+#####################################################################
+#
+# Module code follows
+#
+#####################################################################
+
+{
+
+    my $fszlimit = 16 * 1024;
+
+    sub FSZLIMIT : lvalue {
+
+        # Purpose:  Gets/sets $fszlimit
+        # Returns:  $fszlimit
+        # Usage:    $limit = FSZLIMIT;
+        # Usage:    FSZLIMIT = 100;
+
+        $fszlimit;
+    }
+
+}
+
+sub slurp ($$;$) {
+
+    # Purpose:  Reads a file into memory provided it doesn't exceed FSZLIMIT
+    #           in size.  Automatically splits it into lines, but optionally
+    #           chomps them as well.
+    # Returns:  True (1) if the file was successfully read,
+    #           False (0) if there are any errors
+    # Usage:    $rv = slurp($filename, \@lines);
+    # Usage:    $rv = slurp($filename, \@lines, 1);
+
+    my $file    = shift;
+    my $aref    = shift;
+    my $doChomp = shift || 0;
+    my $rv      = 0;
+    my ( $fd, $b, $line, @lines );
+
+    # Validate arguments
+    croak 'Mandatory first argument must be a defined filename'
+        unless defined $file;
+    croak 'Mandatory second argument must be an array reference'
+        unless defined $aref && ref $aref eq 'ARRAY';
+
+    pdebug( "entering w/($file)($aref)($doChomp)", PDLEVEL1 );
+    pIn();
+    @$aref = ();
+
+    # Validate file and exit early, if need be
+    unless ( -e $file && -r _ ) {
+        if ( !-e _ ) {
+            Paranoid::ERROR =
+                pdebug( "file ($file) does not exist", PDLEVEL1 );
+        } else {
+            Paranoid::ERROR =
+                pdebug( "file ($file) is not readable by the effective user",
+                PDLEVEL1 );
+        }
+        pOut();
+        pdebug( "leaving w/rv: $rv", PDLEVEL1 );
+        return 0;
+    }
+    unless ( detaint( $file, 'filename', \$b ) ) {
+        Paranoid::ERROR =
+            pdebug( "failed to detaint filename: $file", PDLEVEL1 );
+        pOut();
+        pdebug( "leaving w/rv: $rv", PDLEVEL1 );
+        return 0;
+    }
+
+    # Read the file
+    @$aref = ();
+    if ( open $fd, '<', $file ) {
+        flock $fd, LOCK_SH;
+        $b = read $fd, $line, FSZLIMIT() + 1;
+        flock $fd, LOCK_UN;
+        close $fd;
+
+        # Process what was read
+        if ( defined $b ) {
+            if ( $b > 0 ) {
+                if ( $b > FSZLIMIT ) {
+                    Paranoid::ERROR = pdebug(
+                        "file '$file' is larger than " . FSZLIMIT . ' bytes',
+                        PDLEVEL1
+                    );
+                } else {
+                    $rv = 1;
+                }
+                while ( length $line > 0 ) {
+                    $line       =~ /\n/sm
+                        ? $line =~ s/^(.*?\n)//sm
+                        : $line =~ s/(.*)//sm;
+                    push @lines, $1;
+                }
+            }
+        } else {
+            Paranoid::ERROR =
+                pdebug( "error reading file ($file): $!", PDLEVEL1 );
+        }
+        pdebug( "read @{[ scalar @lines ]} lines.", PDLEVEL1 );
+
+        # Chomp lines
+        do {
+            foreach (@lines) {s/\r?\n$//sm}
+        } if $doChomp;
+
+        # Populate $aref with results
+        @$aref = @lines;
+
+    } else {
+        Paranoid::ERROR =
+            pdebug( "error opening file ($file): $!", PDLEVEL1 );
+    }
+
+    pOut();
+    pdebug( "leaving w/rv: $rv", PDLEVEL1 );
+
+    return $rv;
+}
+
+{
+    my %regexes = (
+        alphabetic   => qr/[a-zA-Z]+/sm,
+        alphanumeric => qr/[a-zA-Z0-9]+/sm,
+        alphawhite   => qr/[a-zA-Z\s]+/sm,
+        alnumwhite   => qr/[a-zA-Z0-9\s]+/sm,
+        email =>
+            qr/[a-zA-Z][\w\.\-]*\@(?:[a-zA-Z0-9][a-zA-Z0-9\-]*\.)*[a-zA-Z0-9]+/sm,
+        filename => qr#[/ \w\-\.:,@\+]+\[?#sm,
+        fileglob => qr#[/ \w\-\.:,@\+\*\?\{\}\[\]]+\[?#sm,
+        hostname => qr/(?:[a-zA-Z0-9][a-zA-Z0-9\-]*\.)*[a-zA-Z0-9]+/sm,
+        ipaddr   => qr/(?:\d+\.){3}\d+/sm,
+        netaddr  => qr#^(?:\d+\.){3}\d+(?:/(?:\d+|(?:\d+\.){3}\d+))?$#sm,
+        login    => qr/[a-zA-Z][\w\.\-]*/sm,
+        nometa   => qr/[^\%\`\$\!\@]+/sm,
+        number   => qr/[+\-]?[0-9]+(?:\.[0-9]+)?/sm,
+    );
+
+    sub addTaintRegex ($$) {
+
+        # Purpose:  Adds another regular expression to the internal hash
+        # Returns:  True (1) if passed string is defined, False (0) if undef
+        # Usage:    $rv = addTaintRegex($name, $regex);
+
+        my $name  = shift;
+        my $regex = shift;
+
+        # TODO: Needs to enclose in an eval in case of bad regexes being
+        # TODO: passed
+
+        $regexes{$name} = qr/$regex/sm if defined $regex;
+
+        return defined $regex ? 1 : 0;
+    }
+
+    sub _getTaintRegex ($) {
+
+        # Purpose:  Retrieves the named regex
+        # Returns:  Regex if named regex is defined, undef otherwise
+        # Usage:    $regex = _getTaintRegex($name);
+
+        my $name = shift;
+        return ( defined $name && exists $regexes{$name} )
+            ? $regexes{$name}
+            : undef;
+    }
+}
+
+sub detaint ($$$) {
+
+    # Purpose:  Detaints and validates input in one call
+    # Returns:  True (1) if detainting was successful,
+    #           False (0) if there are any errors
+    # Usage:    $rv = detaint($input, $dataType, \$detainted);
+
+    my $input = shift;
+    my $type  = shift;
+    my $sref  = shift;
+    my $rv    = 0;
+    my $regex = _getTaintRegex($type);
+    my $istr  = defined $input ? $input : 'undef';
+    my $dstr  = defined $type ? $type : 'undef';
+
+    # Validate arguments
+    croak 'Mandatory third argument must be a valid scalar reference'
+        unless defined $sref && ref $sref eq 'SCALAR';
+
+    pdebug( "entering w/($istr)($dstr)($sref)", PDLEVEL1 );
+    pIn();
+
+    # Zero out contents of $sref
+    $$sref = undef;
+
+    # Is everything kosher for processing?
+    if ( defined $input and length $input and defined $regex ) {
+
+        # It is, so detaint
+        ($$sref) = ( $input =~ /^($regex)$/sm );
+
+        # Report the results
+        if ( defined $$sref && length $$sref > 0 ) {
+            $rv = 1;
+            pdebug( "detainted value ($$sref)", PDLEVEL1 );
+        } else {
+            pdebug( 'failed to detaint input', PDLEVEL1 );
+        }
+
+    } else {
+
+        # Bad arguments -- report and return false
+        Paranoid::ERROR =
+            pdebug( "bad arguments passed ($istr)($dstr)", PDLEVEL1 );
+        $rv = 0;
+    }
+
+    pOut();
+    pdebug( "leaving w/rv: $rv", PDLEVEL1 );
+
+    return $rv;
+}
+
+sub stringMatch ($@) {
+
+    # Purpose:  Looks for occurrences of strings and/or regexes in the passed
+    #           input
+    # Returns:  True (1) any of the strings/regexes match,
+    #           False (0), otherwise
+    # Usage:    $rv = stringMatch($input, @words);
+
+    my $input = shift;
+    my @match = @_;
+    my $rv    = 0;
+    my ( @regex, $r );
+
+    # Validate arguments
+    croak 'Mandatory first argument must be defined input'
+        unless defined $input;
+    croak 'Mandatory string matches must be passed after input'
+        unless @match;
+
+    pdebug( "entering w/($input)(@match)", PDLEVEL1 );
+    pIn();
+
+    # Populate @regex w/regexes
+    @regex = grep { defined $_ && ref $_ eq 'Regexp' } @match;
+
+    # Convert remaining strings to regexes
+    foreach ( grep { defined $_ && ref $_ ne 'Regexp' } @match ) {
+        push @regex, m#^/(.+)/$#sm ? qr#$1#smi : qr#\Q$_\E#smi;
+    }
+
+    # Start comparisons
+    study $input;
+    foreach $r (@regex) {
+        if ( $input =~ /$r/smi ) {
+            $rv = 1;
+            last;
+        }
+    }
+
+    pOut();
+    pdebug( "leaving w/rv: $rv", PDLEVEL1 );
+
+    return $rv;
+}
+
+1;
+
+__END__
 
 =head1 NAME
 
 Paranoid::Input - Paranoid input function
 
-=head1 MODULE VERSION
+=head1 VERSION
 
-$Id: Input.pm,v 0.12 2008/08/28 06:35:28 acorliss Exp $
+$Id: Input.pm,v 0.14 2009/03/04 09:32:51 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -39,24 +330,6 @@ $Id: Input.pm,v 0.12 2008/08/28 06:35:28 acorliss Exp $
   $rv = detaint($userInput, "login", \$val);
   $rv = stringMatch($input, @strings);
 
-=head1 REQUIREMENTS
-
-=over
-
-=item o
-
-Fcntl
-
-=item o
-
-Paranoid
-
-=item o
-
-Paranoid::Debug
-
-=back
-
 =head1 DESCRIPTION
 
 The modules provide safer routines to use for input activities such as reading
@@ -64,62 +337,13 @@ files and detainting user input.
 
 B<addTaintRegex> is only exported if this module is used with the B<:all> target.
 
-=cut
-
-#####################################################################
-#
-# Environment definitions
-#
-#####################################################################
-
-package Paranoid::Input;
-
-use strict;
-use warnings;
-use vars qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS);
-use Exporter;
-use Fcntl qw(:flock);
-use Paranoid;
-use Paranoid::Debug;
-use Carp;
-
-($VERSION)    = (q$Revision: 0.12 $ =~ /(\d+(?:\.(\d+))+)/);
-
-@ISA          = qw(Exporter);
-@EXPORT       = qw(FSZLIMIT       slurp     detaint     stringMatch);
-@EXPORT_OK    = qw(FSZLIMIT       slurp     detaint     stringMatch
-                   addTaintRegex);
-%EXPORT_TAGS  = (
-  all => [qw(FSZLIMIT       slurp     detaint     stringMatch
-             addTaintRegex)],
-  );
-
-#####################################################################
-#
-# Module code follows
-#
-#####################################################################
-
-=head1 VARIABLES
+=head1 SUBROUTINES/METHODS
 
 =head2 FSZLIMIT
 
-Setting this variable defines how large a block your reads will be in bytes.
-By default it is set to 16KB.
-
-=cut
-
-{
-
-  my $FSZLIMIT  = 16 * 1024;
-  
-  sub FSZLIMIT : lvalue {
-    $FSZLIMIT;
-  }
-
-}
-
-=head1 FUNCTIONS
+The value returned/set by this lvalue function is the maximum file size that
+will be read into memory.  This affects functions like B<slurp> (documented
+below).
 
 =head2 slurp
 
@@ -134,111 +358,10 @@ An optional third argument sets a boolean flag which, if true, determines if
 all lines are automatically chomped.  If chomping is enabled this will strip
 both UNIX and DOS line separators.
 
-The return value is fales if the read was unsuccessful or the file's size
+The return value is false if the read was unsuccessful or the file's size
 exceeded B<FSZLIMIT>.  In the latter case the array reference will still be
 populated with what was read.  The reason for the failure can be retrieved
 B<from Paranoid::ERROR>.
-
-=cut
-
-sub slurp ($$;$) {
-  my $file    = shift;
-  my $aref    = shift;
-  my $doChomp = shift || 0;
-  my $rv      = 0;
-  my ($fd, $b, $line, @lines);
-
-  # Validate arguments
-  croak "Mandatory first argument must be a defined filename" unless
-    defined $file;
-  croak "Mandatory second argument must be an array reference" unless
-    defined $aref && ref($aref) eq 'ARRAY';
-
-  pdebug("entering w/($file)($aref)($doChomp)", 9);
-  pIn();
-  @$aref = ();
-
-  # Validate file and exit early, if need be
-  unless (-e $file && -r _) {
-    if (! -e _) {
-      Paranoid::ERROR = pdebug("file ($file) does not exist", 9);
-    } else {
-      Paranoid::ERROR = pdebug(
-        "file ($file) is not readable by the effective user", 9);
-    }
-    pOut();
-    pdebug("leaving w/rv: $rv", 9);
-    return 0;
-  }
-  unless (detaint($file, 'filename', \$b)) {
-    Paranoid::ERROR = pdebug("failed to detaint filename: $file", 9);
-    pOut();
-    pdebug("leaving w/rv: $rv", 9);
-    return 0;
-  }
-
-  # Read the file
-  @$aref = ();
-  if (open($fd, "< $file")) {
-    flock $fd, LOCK_SH;
-    $b = read $fd, $line, FSZLIMIT() + 1;
-    flock $fd, LOCK_UN;
-    close($fd);
-
-    # Process what was read
-    if (defined $b) {
-      if ($b > 0) {
-        if ($b > FSZLIMIT) {
-          Paranoid::ERROR = pdebug("file '$file' is larger than " .  
-            FSZLIMIT() . " bytes", 9);
-        } else {
-          $rv = 1;
-        }
-        while (length($line) > 0) {
-          $line =~ /\n/m ? $line =~ s/^(.*?\n)//m : $line =~ s/(.*)//m;
-          push(@lines, $1);
-        }
-      }
-    } else {
-      Paranoid::ERROR = pdebug("error reading file ($file): $!", 9);
-    }
-    pdebug("read @{[ scalar @lines ]} lines.", 9);
-
-    # Chomp lines
-    do {
-      foreach (@lines) { s/\r?\n$//m };
-    } if $doChomp;
-
-    # Populate $aref with results
-    @$aref = @lines;
-
-  } else {
-    Paranoid::ERROR = pdebug("error opening file ($file): $!", 9);
-  }
-
-  pOut();
-  pdebug("leaving w/rv: $rv", 9);
-
-  return $rv;
-}
-
-{
-  my %regexes = (
-    alphabetic     => qr/[a-zA-Z]+/,
-    alphanumeric   => qr/[a-zA-Z0-9]+/,
-    alphawhite     => qr/[a-zA-Z\s]+/,
-    alnumwhite     => qr/[a-zA-Z0-9\s]+/,
-    email          => 
-      qr/[a-zA-Z][\w\.\-]*\@(?:[a-zA-Z0-9][a-zA-Z0-9\-]*\.)*[a-zA-Z0-9]+/,
-    filename       => qr#[/ \w\-\.:,@\+]+\[?#,
-    fileglob       => qr#[/ \w\-\.:,@\+\*\?\{\}\[\]]+\[?#,
-    hostname       => qr/(?:[a-zA-Z0-9][a-zA-Z0-9\-]*\.)*[a-zA-Z0-9]+/,
-    ipaddr         => qr/(?:\d+\.){3}\d+/,
-    netaddr        => qr#^(?:\d+\.){3}\d+(?:/(?:\d+|(?:\d+\.){3}\d+))?$#,
-    login          => qr/[a-zA-Z][\w\.\-]*/,
-    nometa         => qr/[^\%\`\$\!\@]+/,
-    number         => qr/[+\-]?[0-9]+(?:\.[0-9]+)?/,
-    );
 
 =head2 addTaintRegex
 
@@ -247,22 +370,6 @@ sub slurp ($$;$) {
 This adds a regular expression which can used by name to detaint user input
 via the B<detaint> function.  This will allow you to overwrite the internally
 provided regexes or as well as your own.
-
-=cut
-
-  sub addTaintRegex ($$) {
-    my $name  = shift;
-    my $regex = shift;
-
-    $regexes{$name} = qr/$regex/;
-  }
-
-  sub _getTaintRegex ($) {
-    my $name = shift;
-    return (defined $name && exists $regexes{$name}) ? 
-      $regexes{$name} : undef;
-  }
-}
 
 =head2 detaint
 
@@ -290,50 +397,15 @@ data types are currently known:
   number                ^([+\-]?[0-9]+(?:\.[0-9]+)?)$
 
 If the first argument fails to match against these regular expressions the
-function will return 0.  This means that zero-length strings or undef values
-can B<not> be passed to this function without raising an error.  In fact, the
-calling code must validate at least that much before calling this function if
-you want to avoid the program croaking.
+function will return 0.  If the string passed is either undefined or a
+zero-length string it will also return 0.  And finally, if you attempt to use
+an unknown (or unregistered) data type it will also return 0, and log an error
+message in B<Paranoid::ERROR>.
 
-=cut
-
-sub detaint ($$$) {
-  my $input = shift;
-  my $type  = shift;
-  my $sref  = shift;
-  my $rv    = 0;
-  my $regex = _getTaintRegex($type);
-
-  # Validate arguments
-  croak "Mandatory first argument must be defined and not ''" unless
-    defined $input && length($input) > 0;
-  croak "Mandatory second argument must be a valid data type" unless
-    defined $type && defined $regex;
-  croak "Mandatory third argument must be a valid scalar reference" unless
-    defined $sref && ref($sref) eq 'SCALAR';
-
-  pdebug("entering w/($input)($type)($sref)", 9);
-  pIn();
-
-  # Zero out contents of $sref
-  $$sref = undef;
-
-  # Detaint
-  ($$sref) = ($input =~ /^($regex)$/m);
-
-  # Report the results
-  if (defined($$sref) && length($$sref) > 0) {
-    $rv = 1;
-    pdebug("detainted value ($$sref)", 9);
-  } else {
-    pdebug("failed to detaint input", 9);
-  }
-
-  pOut();
-  pdebug("leaving w/rv: $rv", 9);
-
-  return $rv;
-}
+B<NOTE>:  This is a small alteration in previous behavior.  In previous
+versions if an undef or zero-length string was passed, or if the data type was
+unknown the code would croak.  That was, perhaps, a tad overzealous on my
+part.
 
 =head2 stringMatch
 
@@ -347,55 +419,34 @@ input for every string passed for matching.  This does safe quoted matches
 B<NOTE>: this performs a study in hopes that for a large number of regexes
 will be performed faster.  This may not always be the case.
 
-=cut
+=head1 DEPENDENCIES
 
-sub stringMatch ($@) {
-  my $input   = shift;
-  my @match   = @_;
-  my $rv      = 0;
-  my (@regex, $r);
+=over
 
-  # Validate arguments
-  croak "Mandatory first argument must be defined input" unless 
-    defined $input;
-  croak "Mandatory string matches must be passed after input" unless
-    @match;
+=item o
 
-  pdebug("entering w/($input)(@match)", 9);
-  pIn();
+L<Fcntl>
 
-  # Populate @regex w/regexes
-  @regex = grep { defined $_ && ref($_) eq 'Regexp' } @match;
+=item o
 
-  # Convert remaining strings to regexes
-  foreach (grep { defined $_ && ref($_) ne 'Regexp' } @match) {
-    push(@regex, m#^/(.+)/$# ? qr#$1#mi : qr#\Q$_\E#mi);
-  }
+L<Paranoid>
 
-  # Start comparisons
-  study $input;
-  foreach $r (@regex) {
-    if ($input =~ /$r/mi) {
-      $rv = 1;
-      last;
-    }
-  }
+=item o
 
-  pOut();
-  pdebug("leaving w/rv: $rv", 9);
+L<Paranoid::Debug>
 
-  return $rv;
-}
+=back
 
-1;
+=head1 BUGS AND LIMITATIONS
 
-=head1 HISTORY
+=head1 AUTHOR
 
-None.
+Arthur Corliss (corliss@digitalmages.com)
 
-=head1 AUTHOR/COPYRIGHT
+=head1 LICENSE AND COPYRIGHT
 
-(c) 2005 Arthur Corliss (corliss@digitalmages.com)
+This software is licensed under the same terms as Perl, itself. 
+Please see http://dev.perl.org/licenses/ for more information.
 
-=cut
+(c) 2005, Arthur Corliss (corliss@digitalmages.com)
 

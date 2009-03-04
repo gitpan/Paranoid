@@ -1,5 +1,18 @@
 CHANGELOG
 
+v0.21  (2009/03/04)
+===================
+--Massive reformat with Perl::Tidy
+--Massive rewrite to accommodate Perl::Critic
+--Converted all tests to use Test::More
+--Converted licensing to be same as Perl
+--Documentation updates
+--Updated to only support Perl 5.6 or better
+--Fixed bug in pcapture to return appropriate return values
+--Fixed bug in pchmodR/pchownR to return correct RV (false)
+  with non-existant targets
+--Added Paranoid::Args
+
 v0.20  (2008/04/28)
 ===================
 --Misc. POD updates

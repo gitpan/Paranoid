@@ -2,31 +2,96 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Paranoid.pm,v 0.20 2008/08/28 06:19:40 acorliss Exp $
+# $Id: Paranoid.pm,v 0.21 2009/03/04 09:32:51 acorliss Exp $
 #
-#    This program is free software; you can redistribute it and/or modify
-#    it under the terms of the GNU General Public License as published by
-#    the Free Software Foundation; either version 2 of the License, or
-#    any later version.
-#
-#    This program is distributed in the hope that it will be useful,
-#    but WITHOUT ANY WARRANTY; without even the implied warranty of
-#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#    GNU General Public License for more details.
-#
-#    You should have received a copy of the GNU General Public License
-#    along with this program; if not, write to the Free Software
-#    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+#    This software is licensed under the same terms as Perl, itself.
+#    Please see http://dev.perl.org/licenses/ for more information.
 #
 #####################################################################
+
+#####################################################################
+#
+# Environment definitions
+#
+#####################################################################
+
+package Paranoid;
+
+use 5.006;
+
+use strict;
+use warnings;
+use vars qw($VERSION @EXPORT @EXPORT_OK %EXPORT_TAGS);
+use base qw(Exporter);
+
+($VERSION) = ( q$Revision: 0.21 $ =~ /(\d+(?:\.(\d+))+)/sm );
+
+@EXPORT      = qw(psecureEnv);
+@EXPORT_OK   = qw(psecureEnv);
+%EXPORT_TAGS = ( all => [qw(psecureEnv)], );
+
+#####################################################################
+#
+# Module code follows
+#
+#####################################################################
+
+#BEGIN {
+#die "This module requires taint mode to be enabled!\n" unless
+#  ${^TAINT} == 1;
+#delete @ENV{qw(IFS CDPATH ENV BASH_ENV)};
+#$ENV{PATH} = '/bin:/sbin:/usr/bin:/usr/sbin';
+#no ops qw(backtick system exec);
+#  :subprocess = system, backtick, exec, fork, glob
+#  :dangerous = syscall, dump, chroot
+#  :others = mostly IPC stuff
+#  :filesys_write = link, unlink, rename, mkdir, rmdir, chmod,
+#                   chown, fcntl
+#  :sys_db = getpwnet, etc.
+#}
+
+sub psecureEnv (;$) {
+
+    # Purpose:  To delete taint-unsafe environment variables and to sanitize
+    #           the PATH variable
+    # Returns:  True (1) -- no matter what
+    # Usage:    psecureEnv();
+
+    my $path = shift;
+
+    $path = '/bin:/usr/bin' unless defined $path;
+
+    delete @ENV{qw(IFS CDPATH ENV BASH_ENV)};
+    $ENV{PATH} = $path;
+
+    return 1;
+}
+
+{
+    my $errorMsg = '';
+
+    sub ERROR : lvalue {
+
+        # Purpose:  To store/retrieve a string error message
+        # Returns:  Scalar string
+        # Usage:    $errMsg = Paranoid::ERROR;
+        # Usage:    Paranoid::ERROR = $errMsg;
+
+        $errorMsg;
+    }
+}
+
+1;
+
+__END__
 
 =head1 NAME
 
 Paranoid - Paranoia support for safer programs
 
-=head1 MODULE VERSION
+=head1 VERSION
 
-$Id: Paranoid.pm,v 0.20 2008/08/28 06:19:40 acorliss Exp $
+$Id: Paranoid.pm,v 0.21 2009/03/04 09:32:51 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -35,10 +100,6 @@ $Id: Paranoid.pm,v 0.20 2008/08/28 06:19:40 acorliss Exp $
   $errMsg = Paranoid::ERROR;
 
   psecureEnv("/bin:/usr/bin");
-
-=head1 REQUIREMENTS
-
-None.
 
 =head1 DESCRIPTION
 
@@ -55,190 +116,7 @@ This module does provide one function meant to secure your environment
 enough to satisfy taint-enabled programs, and as a container which holds the 
 last reported error from any code in the Paranoid framework.
 
-B<NOTE:>  at one point this module enforced use of B<taint> mode in all
-scripts using it.  I no longer do that because I want to use this in other
-modules that never required that constraint, and I don't want to piss off too
-many users right off the bat.  That being said:  B<ALWAYS USE TAINT MODE IF
-YOU CAN>.
-
-=head1 CHILD MODULES
-
-The following modules are available for use.  You should check their POD for
-specifics on use:
-
-  Paranoid::BerkeleyDB
-  Paranoid::Debug
-  Paranoid::Filesystems
-  Paranoid::Input
-  Paranoid::Lockfile
-  Paranoid::Log
-  Paranoid::Module
-  Paranoid::Network
-  Paranoid::Process
-
-=cut
-
-#####################################################################
-#
-# Environment definitions
-#
-#####################################################################
-
-package Paranoid;
-
-use strict;
-use warnings;
-use vars qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS);
-use Exporter;
-
-($VERSION)    = (q$Revision: 0.20 $ =~ /(\d+(?:\.(\d+))+)/);
-
-@ISA          = qw(Exporter);
-@EXPORT       = qw(psecureEnv);
-@EXPORT_OK    = qw(psecureEnv);
-%EXPORT_TAGS  = (
-                  all   => [ qw(psecureEnv) ],
-                 );
-
-#####################################################################
-#
-# Module code follows
-#
-#####################################################################
-
-#BEGIN {
-  #die "This module requires taint mode to be enabled!\n" unless
-  #  ${^TAINT} == 1;
-  #delete @ENV{qw(IFS CDPATH ENV BASH_ENV)};
-  #$ENV{PATH} = '/bin:/sbin:/usr/bin:/usr/sbin';
-  #no ops qw(backtick system exec);
-  #  :subprocess = system, backtick, exec, fork, glob
-  #  :dangerous = syscall, dump, chroot
-  #  :others = mostly IPC stuff
-  #  :filesys_write = link, unlink, rename, mkdir, rmdir, chmod, 
-  #                   chown, fcntl
-  #  :sys_db = getpwnet, etc.
-#}
-
-=head1 TAINT NOTES
-
-Taint-mode programming can be somewhat of an adventure until you know all the
-places considered dangerous under perl's taint mode.  The following functions
-should generally have their arguments detainted before using:
-
-=over
-
-=item o
-
-exec
-
-=item o
-
-system
-
-=item o
-
-open
-
-=item o
-
-glob
-
-=item o
-
-unlink
-
-=item o
-
-mkdir
-
-=item o
-
-chdir
-
-=item o
-
-rmdir
-
-=item o
-
-chown
-
-=item o
-
-chmod
-
-=item o
-
-umask
-
-=item o
-
-utime
-
-=item o
-
-link
-
-=item o
-
-symlink
-
-=item o
-
-kill
-
-=item o
-
-eval
-
-=item o
-
-truncate
-
-=item o
-
-ioctl
-
-=item o
-
-fcntl
-
-=item o
-
-chroot
-
-=item o
-
-setpgrp
-
-=item o
-
-setpriority
-
-=item o
-
-syscall
-
-=item o
-
-socket
-
-=item o
-
-socketpair
-
-=item o
-
-bind
-
-=item o
-
-connect
-
-=back
-
-=head1 FUNCTIONS
+=head1 SUBROUTINES/METHODS
 
 =head2 psecureEnv
 
@@ -249,41 +127,99 @@ used to subvert perl when being run in setuid applications.  It also sets the
 path, either to the passed argument (if passed) or a default of
 "/bin:/usr/bin".
 
-=cut
-
-sub psecureEnv(;$) {
-  my $path = shift @_;
-
-  $path = "/bin:/usr/bin" unless defined $path;
-
-  delete @ENV{qw(IFS CDPATH ENV BASH_ENV)};
-  $ENV{PATH} = $path;
-}
-
 =head2 Paranoid::ERROR
+
+  $errMsg = Paranoid::ERROR;
+  Paranoid::ERROR = $errMsg;
 
 This lvalue function is not exported and must be referenced via the 
 B<Paranoid> namespace.
 
-=cut
+=head1 TAINT NOTES
 
-{
-  my $ERROR = '';
+Taint-mode programming can be somewhat of an adventure until you know all the
+places considered dangerous under perl's taint mode.  The following functions
+should generally have their arguments detainted before using:
 
-  sub ERROR : lvalue {
-    $ERROR;
-  }
-}
+  exec        system      open        glob
+  unlink      mkdir       chdir       rmdir
+  chown       chmod       umask       utime
+  link        symlink     kill        eval
+  truncate    ioctl       fcntl       chroot
+  setpgrp     setpriority syscall     socket
+  socketpair  bind        connect
 
-1;
+=head1 DEPENDENCIES
 
-=head1 HISTORY
+While this module itself doesn't have any external dependencies various child
+modules do.  Please check their documentation for any particulars should you
+use them.
 
-None as of yet.
+=head1 SEE ALSO
 
-=head1 AUTHOR/COPYRIGHT
+The following modules are available for use.  You should check their POD for
+specifics on use:
 
-(c) 2005 Arthur Corliss (corliss@digitalmages.com)
+=over
 
-=cut
+=item o
+
+L<Paranoid::Args>: Command-line argument parsing functions
+
+=item o
+
+L<Paranoid::BerkeleyDB>: OO-oriented BerkelyDB access with concurrent access
+capabilities
+
+=item o
+
+L<Paranoid::Debug>: Command-line debugging framework and functions
+
+=item o
+
+L<Paranoid::Filesystems>: Filesystem operation functions
+
+=item o
+
+L<Paranoid::Input>: Input-related functions (file reading, detainting)
+
+=item o
+
+L<Paranoid::Lockfile>: Lockfile support
+
+=item o
+
+L<Paranoid::Log>: Unified logging framework and functions
+
+=item o
+
+L<Paranoid::Module>: Run-time module loading functions
+
+=item o
+
+L<Paranoid::Network>: Network-related functions
+
+=item o
+
+L<Paranoid::Process>: Process management functions
+
+=back
+
+=head1 BUGS AND LIMITATIONS
+
+If your application is sensitive to performance issues then you may
+be better off not using these modules.  The primary focus was on security,
+robustness, and diagnostics.  That said, there's probably a lot of room for
+improvement on the performance front.
+
+=head1 AUTHOR
+
+Arthur Corliss (corliss@digitalmages.com)
+
+=head1 LICENSE AND COPYRIGHT
+
+This software is licensed under the same terms as Perl, itself. 
+Please see http://dev.perl.org/licenses/ for more information.
+
+(c) 2005, Arthur Corliss (corliss@digitalmages.com)
 
