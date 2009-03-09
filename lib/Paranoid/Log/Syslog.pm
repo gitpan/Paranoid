@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Syslog.pm,v 0.7 2009/03/04 09:32:51 acorliss Exp $
+# $Id: Syslog.pm,v 0.81 2009/03/05 00:09:34 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -26,7 +26,7 @@ use Paranoid::Debug;
 use Unix::Syslog qw(:macros :subs);
 use Carp;
 
-($VERSION) = ( q$Revision: 0.7 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.81 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 #####################################################################
 #
@@ -253,7 +253,7 @@ Paranoid::Log::Syslog - Log Facility Syslog
 
 =head1 VERSION
 
-$Id: Syslog.pm,v 0.7 2009/03/04 09:32:51 acorliss Exp $
+$Id: Syslog.pm,v 0.81 2009/03/05 00:09:34 acorliss Exp $
 
 =head1 SYNOPSIS
 

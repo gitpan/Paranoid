@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Process.pm,v 0.10 2009/03/04 09:32:51 acorliss Exp $
+# $Id: Process.pm,v 0.93 2009/03/09 06:02:39 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -28,7 +28,7 @@ use Paranoid::Debug qw(:all);
 use POSIX qw(getuid setuid setgid WNOHANG);
 use Carp;
 
-($VERSION) = ( q$Revision: 0.10 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.93 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 @EXPORT    = qw(switchUser);
 @EXPORT_OK = qw(MAXCHILDREN      childrenCount   installChldHandler
@@ -296,7 +296,7 @@ sub pcapture ($$$) {
     my $cref = shift;
     my $oref = shift;
     my $rv   = -1;
-    my ( $cored, $signal );
+    my ( $sigchld, $cored, $signal );
 
     # Validate arguments
     croak 'Mandatory first argument must be a defined shell command string'
@@ -312,6 +312,10 @@ sub pcapture ($$$) {
     # Massage the command string
     $cmd = "( $cmd ) 2>&1";
 
+    # Backup SIGCHLD handler and set it to something safe
+    $sigchld = $SIG{CHLD};
+    $SIG{CHLD} = sub {1};
+
     # Execute and snarf the output
     pdebug( 'executing command', PDLEVEL2 );
     $$oref  = `$cmd`;
@@ -320,8 +324,11 @@ sub pcapture ($$$) {
     $signal = $$cref & 127;
     pdebug( "command exited with raw rv: $$cref", PDLEVEL2 );
 
+    # Restore SIGCHLD handler
+    $SIG{CHLD} = $sigchld;
+
     # Check the return value
-    if ( $$cref == -1 or $$cref >> 8 == 127 ) {
+    if ( $$cref == -1 or $$cref == 32512 ) {
 
         # Command failed to execute
         Paranoid::ERROR = pdebug( "command failed to execute: $!", PDLEVEL1 );
@@ -359,7 +366,7 @@ Paranoid::Process - Process Management Functions
 
 =head1 VERSION
 
-$Id: Process.pm,v 0.10 2009/03/04 09:32:51 acorliss Exp $
+$Id: Process.pm,v 0.93 2009/03/09 06:02:39 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -535,6 +542,14 @@ For instance, to track the children's history in the parent:
   foreach (@chistory) { print "PID: $$_[0] EXIT: $$_[1]\n" };
 
 =head1 BUGS AND LIMITATIONS
+
+On platforms where 64-bit integers are supported for UIDs and GIDs you will
+get erroneous results with 32-bit Perls.  B<ptranslateUser/Group> will
+truncate integers that exceed the 32-bit range, giving you incorrect and
+possibly negative numbers back.
+
+On Solaris B<pcapture> doesn't return a -1 for non-existant commands, but a 0.
+On Linux this appears to work as intended.
 
 =head1 AUTHOR
 

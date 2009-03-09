@@ -1,5 +1,11 @@
 CHANGELOG
 
+v0.22  (2009/03/08)
+===================
+--Fixed tests that weren't fully supported on all platforms
+--Commented out pchown tests which were failing to due to a bug
+  in Perl.  A patch has been submitted to bleadperl to address it.
+
 v0.21  (2009/03/04)
 ===================
 --Massive reformat with Perl::Tidy

@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Lockfile.pm,v 0.6 2009/03/04 09:32:51 acorliss Exp $
+# $Id: Lockfile.pm,v 0.61 2009/03/05 00:06:32 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -29,7 +29,7 @@ use Paranoid::Debug qw(:all);
 use Paranoid::Filesystem;
 use Carp;
 
-($VERSION) = ( q$Revision: 0.6 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.61 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 @EXPORT      = qw(plock punlock pcloseLockfile);
 @EXPORT_OK   = qw(plock punlock pcloseLockfile);
@@ -185,7 +185,7 @@ Paranoid::Lockfile - Paranoid Lockfile support
 
 =head1 VERSION
 
-$Id: Lockfile.pm,v 0.6 2009/03/04 09:32:51 acorliss Exp $
+$Id: Lockfile.pm,v 0.61 2009/03/05 00:06:32 acorliss Exp $
 
 =head1 SYNOPSIS
 

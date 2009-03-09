@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Network.pm,v 0.6 2009/03/04 09:32:51 acorliss Exp $
+# $Id: Network.pm,v 0.61 2009/03/05 00:07:00 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -27,7 +27,7 @@ use Paranoid::Debug qw(:all);
 use Socket;
 use Carp;
 
-($VERSION) = ( q$Revision: 0.6 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.61 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 @EXPORT      = qw(ipInNetwork hostInDomain);
 @EXPORT_OK   = qw(ipInNetwork hostInDomain);
@@ -156,7 +156,7 @@ Paranoid::Network - Network functions for paranoid programs
 
 =head1 VERSION
 
-$Id: Network.pm,v 0.6 2009/03/04 09:32:51 acorliss Exp $
+$Id: Network.pm,v 0.61 2009/03/05 00:07:00 acorliss Exp $
 
 =head1 SYNOPSIS
 

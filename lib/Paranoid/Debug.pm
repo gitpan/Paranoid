@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Debug.pm,v 0.11 2009/03/04 09:32:51 acorliss Exp $
+# $Id: Debug.pm,v 0.91 2009/03/05 00:08:07 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -28,7 +28,7 @@ use constant PDLEVEL2 => 10;
 use constant PDLEVEL3 => 11;
 use constant PDLEVEL4 => 12;
 
-($VERSION) = ( q$Revision: 0.11 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.91 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 @EXPORT    = qw(PDEBUG pdebug perror pIn pOut psetDebug PDPREFIX);
 @EXPORT_OK = qw(PDEBUG pdebug perror pIn pOut psetDebug PDPREFIX
@@ -168,7 +168,7 @@ Paranoid::Debug - Trace message support for paranoid programs
 
 =head1 VERSION
 
-$Id: Debug.pm,v 0.11 2009/03/04 09:32:51 acorliss Exp $
+$Id: Debug.pm,v 0.91 2009/03/05 00:08:07 acorliss Exp $
 
 =head1 SYNOPSIS
 

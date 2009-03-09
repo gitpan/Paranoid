@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Paranoid.pm,v 0.21 2009/03/04 09:32:51 acorliss Exp $
+# $Id: Paranoid.pm,v 0.22 2009/03/06 06:29:25 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -24,7 +24,7 @@ use warnings;
 use vars qw($VERSION @EXPORT @EXPORT_OK %EXPORT_TAGS);
 use base qw(Exporter);
 
-($VERSION) = ( q$Revision: 0.21 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.22 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 @EXPORT      = qw(psecureEnv);
 @EXPORT_OK   = qw(psecureEnv);
@@ -91,7 +91,7 @@ Paranoid - Paranoia support for safer programs
 
 =head1 VERSION
 
-$Id: Paranoid.pm,v 0.21 2009/03/04 09:32:51 acorliss Exp $
+$Id: Paranoid.pm,v 0.22 2009/03/06 06:29:25 acorliss Exp $
 
 =head1 SYNOPSIS
 

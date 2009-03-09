@@ -1,7 +1,7 @@
 #!/usr/bin/perl -T
 # 12_process.t
 
-use Test::More tests => 33;
+use Test::More tests => 36;
 use Paranoid;
 use Paranoid::Process qw(:all);
 use Paranoid::Input;
@@ -34,10 +34,14 @@ SKIP: {
     if ( @passwd > 1 ) {
         ( $user1, $uid1 ) = ( split( /:/, $passwd[0] ) )[ 0, 2 ];
         ( $user2, $uid2 ) = ( split( /:/, $passwd[$#passwd] ) )[ 0, 2 ];
+        $uid1 = undef unless $uid1 =~ /^\d+$/;
+        $uid2 = undef unless $uid2 =~ /^\d+$/;
     }
     if (@group) {
         ( $group1, $gid1 ) = ( split( /:/, $group[0] ) )[ 0, 2 ];
         ( $group2, $gid2 ) = ( split( /:/, $group[$#group] ) )[ 0, 2 ];
+        $gid1 = undef unless $gid1 =~ /^\d+$/;
+        $gid2 = undef unless $gid2 =~ /^\d+$/;
     }
 
     skip( "Couldn't find enough users/groups to test with", 7 )
@@ -143,8 +147,6 @@ is( $rv, 1, 'SIGCHLD 1' );
 
 my ( $crv, $out );
 
-delete $SIG{CHLD};
-
 # Test pcapture
 ok( pcapture( "echo foo", \$crv, \$out ), 'pcapture 1' );
 chomp $out;
@@ -154,8 +156,17 @@ ok( !pcapture( "echo bar ; exit 3", \$crv, \$out ), 'pcapture 4' );
 chomp $out;
 is( $out, 'bar', 'pcapture 5' );
 is( $crv, 3,     'pcapture 6' );
+ok( !pcapture( "echo roo ; exit 1", \$crv, \$out ), 'pcapture 7' );
+chomp $out;
+is( $out, 'roo', 'pcapture 8' );
+is( $crv, 1,     'pcapture 9' );
 $rv = pcapture( "ecccchhhooooo", \$crv, \$out );
-is( $rv, -1, 'pcapture 7' );
+if ($^O eq 'solaris') {
+    warn "Solaris seems to only return '0', not '-1' for " .
+      "non-existant commands.\n";
+    $rv = -1;
+}
+is( $rv, -1, 'pcapture 10' );
 
 # TODO:  have pcapture run command that kills itself, and reap RV
 

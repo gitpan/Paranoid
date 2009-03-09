@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Buffer.pm,v 0.8 2009/03/04 09:32:51 acorliss Exp $
+# $Id: Buffer.pm,v 0.81 2009/03/05 00:09:34 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -25,7 +25,7 @@ use vars qw($VERSION);
 use Paranoid::Debug qw(:all);
 use Carp;
 
-($VERSION) = ( q$Revision: 0.8 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.81 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 #####################################################################
 #
@@ -164,7 +164,7 @@ Paranoid::Log::Buffer - Log Buffer Functions
 
 =head1 VERSION
 
-$Id: Buffer.pm,v 0.8 2009/03/04 09:32:51 acorliss Exp $
+$Id: Buffer.pm,v 0.81 2009/03/05 00:09:34 acorliss Exp $
 
 =head1 SYNOPSIS
 
