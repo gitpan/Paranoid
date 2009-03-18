@@ -1,7 +1,7 @@
 #!/usr/bin/perl -T
 # 04_berkeleydb.t
 
-use Test::More tests => 32;
+use Test::More tests => 34;
 use Paranoid;
 use Paranoid::Filesystem qw(prmR);
 use Paranoid::Module;
@@ -16,7 +16,7 @@ my ( $rv, %errors, $db );
 $rv = loadModule("Paranoid::BerkeleyDB");
 
 SKIP: {
-    skip( 'BerkeleyDB module not found', 32 ) unless $rv;
+    skip( 'BerkeleyDB module not found', 34 ) unless $rv;
 
     $db = Paranoid::BerkeleyDB->new( DbDir => './t/db', DbName => 'test.db' );
     isnt( $db, undef, 'got db handle' );
@@ -72,6 +72,24 @@ SKIP: {
     is( $rv, 0, 'get keys 5' );
     $rv = scalar $db->listDbs;
     is( $rv, 2, 'listDbs' );
+
+    foreach ( 1 .. 20 ) {
+        $db->setVal( $_ => $_ ** 2 );
+    }
+
+    sub testIterator {
+       my $db  = shift;
+       my $key = shift;
+       my $val = shift;
+
+       #warn "Power of $key is $val\n";
+       $db->setVal( $key, undef );
+    }
+
+    $rv = $db->getKeys(undef, \&testIterator);
+    is( $rv, 20, 'iterator 1');
+    $rv = $db->getKeys;
+    is( $rv, 0, 'iterator 2');
 
     # Cleanup
     prmR( \%errors, "./t/db" );

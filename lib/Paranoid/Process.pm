@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Process.pm,v 0.93 2009/03/09 06:02:39 acorliss Exp $
+# $Id: Process.pm,v 0.94 2009/03/17 23:55:30 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -28,7 +28,7 @@ use Paranoid::Debug qw(:all);
 use POSIX qw(getuid setuid setgid WNOHANG);
 use Carp;
 
-($VERSION) = ( q$Revision: 0.93 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.94 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 @EXPORT    = qw(switchUser);
 @EXPORT_OK = qw(MAXCHILDREN      childrenCount   installChldHandler
@@ -366,7 +366,7 @@ Paranoid::Process - Process Management Functions
 
 =head1 VERSION
 
-$Id: Process.pm,v 0.93 2009/03/09 06:02:39 acorliss Exp $
+$Id: Process.pm,v 0.94 2009/03/17 23:55:30 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -543,10 +543,10 @@ For instance, to track the children's history in the parent:
 
 =head1 BUGS AND LIMITATIONS
 
-On platforms where 64-bit integers are supported for UIDs and GIDs you will
-get erroneous results with 32-bit Perls.  B<ptranslateUser/Group> will
-truncate integers that exceed the 32-bit range, giving you incorrect and
-possibly negative numbers back.
+There's a bug in an current versions of Perl where B<ptranslateGroup> can 
+return negative numbers instead the actual GID.  This is due to the platform
+supporting unsigned integers for the GID, but Perl was casting it as a signed
+integer.  A patch has been submitted to blead-perl.
 
 On Solaris B<pcapture> doesn't return a -1 for non-existant commands, but a 0.
 On Linux this appears to work as intended.

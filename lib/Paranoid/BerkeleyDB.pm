@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: BerkeleyDB.pm,v 0.81 2009/03/05 00:09:34 acorliss Exp $
+# $Id: BerkeleyDB.pm,v 0.82 2009/03/17 23:50:52 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -27,7 +27,7 @@ use Paranoid::Filesystem qw(pmkdir);
 use BerkeleyDB;
 use Carp;
 
-($VERSION) = ( q$Revision: 0.81 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.82 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 #####################################################################
 #
@@ -36,6 +36,14 @@ use Carp;
 #####################################################################
 
 sub new (@) {
+
+    # Purpose:  Instantiates a new object of this class
+    # Returns:  Object reference if successful, undef otherwise
+    # Usage:    $obj = Paranoid::BerkeleyDB->new(
+    #                   DbDir   = $dir,
+    #                   DbName  = $name,
+    #                   );
+
     my $class = shift;
     my %args  = @_;
     my %init  = (
@@ -132,6 +140,11 @@ sub new (@) {
 }
 
 sub addDb ($$) {
+
+    # Purpose:  Adds a new named database to the current environment
+    # Returns:  True/false
+    # Usage:    $rv = $db->addDb( 'foo.db' );
+
     my $self  = shift;
     my $dbnm  = shift;
     my $dbdir = $self->{DbDir};
@@ -175,6 +188,12 @@ sub addDb ($$) {
 }
 
 sub getVal ($$;$) {
+
+    # Purpose:  Returns the associated value for the requested key.
+    # Returns:  String if key exists, undef otherwise
+    # Usage:    $db->getVal( $key );
+    # Usage:    $db->getVal( $key, $dbName );
+
     my $self  = shift;
     my $key   = shift;
     my $db    = shift;
@@ -224,6 +243,13 @@ sub getVal ($$;$) {
 }
 
 sub setVal ($$;$$) {
+
+    # Purpose:  Associates the key with the passed value or, if the
+    #           value is undefined, deletes any existing key.
+    # Returns:  True/false
+    # Usage:    $db->setVal( $key, $value );
+    # Usage:    $db->setVal( $key, $value, $dbName );
+
     my $self  = shift;
     my $key   = shift;
     my $val   = shift;
@@ -297,15 +323,25 @@ sub setVal ($$;$$) {
     return $rv;
 }
 
-sub getKeys ($;$) {
-    my $self  = shift;
-    my $db    = shift;
-    my $d     = defined $db ? $db : 'undef';
-    my $dref  = $self->{Dbs};
-    my $dbdir = $self->{DbDir};
+sub getKeys ($;$$) {
+
+    # Purpose:  Returns a list of all the keys in the database and
+    #           optionally runs a subroutine over each record.
+    # Returns:  List of keys.
+    # Usage:    @keys = $db->getKeys;
+    # Usage:    @keys = $db->getKeys( $dbName );
+    # Usage:    @keys = $db->getKeys( $dbName, undef );
+
+    my $self   = shift;
+    my $db     = shift;
+    my $subRef = shift;
+    my $d      = defined $db ? $db : 'undef';
+    my $s      = defined $subRef ? $subRef : 'undef';
+    my $dref   = $self->{Dbs};
+    my $dbdir  = $self->{DbDir};
     my ( $cursor, $key, $val, @keys );
 
-    pdebug( "entering w/($d)", PDLEVEL1 );
+    pdebug( "entering w/($d)($s)", PDLEVEL1 );
     pIn();
 
     # Set the default database name if it wasn't passed
@@ -324,15 +360,28 @@ sub getKeys ($;$) {
         $key = $val = '';
         $cursor = $$dref{$db}->db_cursor;
         while ( $cursor->c_get( $key, $val, DB_NEXT ) == 0 ) {
-            push @keys, $key if defined $key;
+            punlock("$dbdir/db.lock");
+
+            if ( defined $key ) {
+
+                # The method was passed a subroutine reference, so
+                # unlock the database and call the routine
+                &$subRef( $self, $key, $val ) if defined $subRef;
+
+                # Save the key;
+                push @keys, $key;
+            }
+
+            plock( "$dbdir/db.lock", 'shared' );
         }
         $cursor->c_close;
 
         # Unlock database
         punlock("$dbdir/db.lock");
 
-        # Report invalid database
     } else {
+
+        # Report invalid database
         Paranoid::ERROR =
             pdebug( "attempted to access a nonexistent database ($db)",
             PDLEVEL1 );
@@ -345,6 +394,12 @@ sub getKeys ($;$) {
 }
 
 sub purgeDb ($;$) {
+
+    # Purpose:  Empties the database.
+    # Returns:  True/false
+    # Usage:    $rv = $db->purgeDb;
+    # Usage:    $rv = $db->purgeDb( $dbName );
+
     my $self  = shift;
     my $db    = shift;
     my $d     = defined $db ? $db : 'undef';
@@ -392,6 +447,11 @@ sub purgeDb ($;$) {
 }
 
 sub listDbs ($) {
+
+    # Purpose:  Returns a list of all named database
+    # Returns:  List of database names
+    # Usage:    @dbs = $db->listDbs;
+
     my $self = shift;
     my $dref = $self->{Dbs};
     my @dbs  = keys %$dref;
@@ -441,7 +501,7 @@ Paranoid::BerkeleyDB -- BerkeleyDB concurrent-access Object
 
 =head1 VERSION
 
-$Id: BerkeleyDB.pm,v 0.81 2009/03/05 00:09:34 acorliss Exp $
+$Id: BerkeleyDB.pm,v 0.82 2009/03/17 23:50:52 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -458,6 +518,8 @@ $Id: BerkeleyDB.pm,v 0.81 2009/03/05 00:09:34 acorliss Exp $
 
   @keys = $db->getKeys();
   @keys = $db->getKeys($dbname);
+  @keys = $db->getKeys(undef, \&sub);
+  @keys = $db->getKeys($dbname, \&sub);
 
   $db->purgeDb();
   $db->purgeDb($dbname);
@@ -547,8 +609,18 @@ be set in B<Paranoid::ERROR>.
 
   @keys = $db->getKeys();
   @keys = $db->getKeys($dbname);
+  @keys = $db->getKeys(undef, \&sub);
+  @keys = $db->getKeys($dbname, \&sub);
 
-This method returns all of the keys in the requested database, in hash order.
+If this method is called without the optional subroutine reference it will
+return all the keys in the hash in hash order.  If a subroutine reference is
+called it will be called as each key/value pair is iterated over with three
+arguments:
+
+    &$subRef($self, $key, $value);
+
+with $self being a handle to the current Paranoid::BerkeleyDB object.  You may
+use this object handle to perform other database operations as needed.
 
 =head2 purgeDb
 

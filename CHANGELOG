@@ -1,10 +1,17 @@
 CHANGELOG
 
-v0.22  (2009/03/08)
+v0.23  (2009/03/17)
 ===================
 --Fixed tests that weren't fully supported on all platforms
 --Commented out pchown tests which were failing to due to a bug
   in Perl.  A patch has been submitted to bleadperl to address it.
+--Added manual detaint of TERM environment variable in psecureEnv
+--Updated documentation to include Paranoid::Data
+--Made getKeys in Paranoid::BerkeleyDB use finer grained locking
+--Added Paranoid::Data
+--Added sip, tail, and closeFile functions
+--Fixed bug in preadDir that added undef records while filtering out
+  symlinks (bug introduced in v0.21)
 
 v0.21  (2009/03/04)
 ===================

@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Filesystem.pm,v 0.15 2009/03/04 09:32:51 acorliss Exp $
+# $Id: Filesystem.pm,v 0.16 2009/03/17 23:54:32 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -31,7 +31,7 @@ use Paranoid::Input;
 use Carp;
 use Cwd qw(realpath);
 
-($VERSION) = ( q$Revision: 0.15 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.16 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 @EXPORT = qw(
     preadDir     psubdirs    pfiles    pglob
@@ -422,8 +422,13 @@ sub preadDir ($$;$) {
 
         # Filter out symlinks, if necessary
         if ($noLinks) {
-            foreach $i ( 0 .. $#{$aref} ) {
-                splice( @$aref, $i, 1 ) and $i-- if -l $$aref[$i];
+            $i = 0;
+            while ( $i <= $#{$aref} ) {
+                if ( -l $$aref[$i] ) {
+                    splice @$aref, $i, 1;
+                } else {
+                    ++$i;
+                }
             }
         }
 
@@ -1288,7 +1293,7 @@ Paranoid::Filesystem - Filesystem Functions
 
 =head1 VERSION
 
-$Id: Filesystem.pm,v 0.15 2009/03/04 09:32:51 acorliss Exp $
+$Id: Filesystem.pm,v 0.16 2009/03/17 23:54:32 acorliss Exp $
 
 =head1 SYNOPSIS
 

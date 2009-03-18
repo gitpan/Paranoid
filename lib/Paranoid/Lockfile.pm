@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Lockfile.pm,v 0.61 2009/03/05 00:06:32 acorliss Exp $
+# $Id: Lockfile.pm,v 0.62 2009/03/17 23:54:56 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -29,7 +29,7 @@ use Paranoid::Debug qw(:all);
 use Paranoid::Filesystem;
 use Carp;
 
-($VERSION) = ( q$Revision: 0.61 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.62 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 @EXPORT      = qw(plock punlock pcloseLockfile);
 @EXPORT_OK   = qw(plock punlock pcloseLockfile);
@@ -48,10 +48,9 @@ use Carp;
 
     sub _clearLocks {
 
-        # Used primarily by the END block to cleanly
-        # close all lock files;
-        #
-        # Usage:  _clearLocks();
+        # Purpose:  Cleanly closes all lockfiles
+        # Returns:  True/false
+        # Usage:    $rv = _clearLocks();
 
         my ( $frv, $rv );
 
@@ -72,6 +71,12 @@ use Carp;
     }
 
     sub plock ($;$$) {
+
+        # Purpose:  Opens and locks the specified file.
+        # Returns:  True/false
+        # Usage:    $rv = plock( $filename );
+        # Usage:    $rv = plock( $filename, $lockType, $fileMode );
+
         my $filename = shift;
         my $type     = shift;
         my $mode     = shift;
@@ -129,6 +134,11 @@ use Carp;
     }
 
     sub punlock ($) {
+
+        # Purpose:  Removes any existing locks on the file
+        # Returns:  True/false
+        # Usage:    $rv = punlock();
+
         my $filename = shift;
         my $rv       = 1;
 
@@ -148,6 +158,11 @@ use Carp;
     }
 
     sub pcloseLockfile ($) {
+
+        # Purpose:  Unlocks and closes the passed filename
+        # Returns:  True/false
+        # Usage:    $rv = pcloseLockfile( $filename );
+
         my $filename = shift;
         my $rv       = 1;
 
@@ -185,7 +200,7 @@ Paranoid::Lockfile - Paranoid Lockfile support
 
 =head1 VERSION
 
-$Id: Lockfile.pm,v 0.61 2009/03/05 00:06:32 acorliss Exp $
+$Id: Lockfile.pm,v 0.62 2009/03/17 23:54:56 acorliss Exp $
 
 =head1 SYNOPSIS
 

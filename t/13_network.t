@@ -6,6 +6,9 @@ use Paranoid;
 use Paranoid::Network;
 use Socket;
 
+use strict;
+use warnings;
+
 psecureEnv();
 
 ok( ipInNetwork( '127.0.0.1', '127.0.0.0/8' ),         'ipInNetwork 1' );

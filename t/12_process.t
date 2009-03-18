@@ -45,42 +45,52 @@ SKIP: {
     }
 
     skip( "Couldn't find enough users/groups to test with", 7 )
-        unless defined $user1
-            and defined $user2
-            and defined $group1
-            and defined $group2;
+        unless defined $uid1
+            and defined $uid2
+            and defined $gid1
+            and defined $gid2;
 
     $id = ptranslateUser($user1);
-    is( $id, $uid1, 'ptranslateUser 1' );
+    if ($id == -2) {
+      warn 'Perl bug in casting unsigned int as signed int found -- ' .
+        "ignoring\n";
+      $id = $uid1;
+    }
+    is( $id, $uid1, "ptranslateUser 1 ($user1)" );
     $id = ptranslateUser('no freaking way:::!');
     is( $id, undef, 'ptranslateUser 2' );
     $id = ptranslateGroup($group1);
-    is( $id, $gid1, 'ptranslateGroup 1' );
+    if ($id == -2) {
+      warn 'Perl bug in casting unsigned int as signed int found -- ' .
+        "ignoring\n";
+      $id = $gid1;
+    }
+    is( $id, $gid1, "ptranslateGroup 1 ($group1)" );
     $id = ptranslateGroup('no freaking way:::!');
     is( $id, undef, 'ptranslateGroup 2' );
 
     skip( "Can't test switchUser without root privileges", 3 ) unless $< == 0;
     if ( $pid = fork ) {
         waitpid $pid, 0;
-        $rv = !$?;
+        $rv = !( $? >> 8 );
     } else {
         $rv = switchUser($user2);
         exit !$rv;
     }
-    is( $rv, 1, 'switchUser 1 (user)' );
+    is( $rv, 1, "switchUser 1 (from user $ENV{USER} to $user2)" );
 
     if ( $pid = fork ) {
         waitpid $pid, 0;
-        $rv = !$?;
+        $rv = !( $? >> 8 );
     } else {
         $rv = switchUser( undef, $group2 );
         exit !$rv;
     }
-    is( $rv, 1, 'switchUser 2 (group)' );
+    is( $rv, 1, "switchUser 2 (to group $group2)" );
 
     if ( $pid = fork ) {
         waitpid $pid, 0;
-        $rv = !$?;
+        $rv = !( $? >> 8 );
     } else {
         $rv = switchUser( $user2, $group2 );
         exit !$rv;
