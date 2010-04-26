@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: File.pm,v 0.82 2009/03/17 23:59:50 acorliss Exp $
+# $Id: File.pm,v 0.83 2010/04/15 23:23:28 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -28,7 +28,7 @@ use Paranoid::Input;
 use Carp;
 use Fcntl qw(:flock :seek O_WRONLY O_CREAT O_APPEND);
 
-($VERSION) = ( q$Revision: 0.82 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.83 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 #####################################################################
 #
@@ -170,7 +170,7 @@ sub log ($$$$$$$$) {
         "entering w/($msgtime)($severity)($message)($name)"
             . "($facility)($level)($scope)($filename)",
         PDLEVEL1
-    );
+        );
     pIn();
 
     # Message time defaults to current time
@@ -219,7 +219,7 @@ Paranoid::Log::File - File Logging Functions
 
 =head1 VERSION
 
-$Id: File.pm,v 0.82 2009/03/17 23:59:50 acorliss Exp $
+$Id: File.pm,v 0.83 2010/04/15 23:23:28 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -240,6 +240,14 @@ exclusive interface for logging.
 
 B<NOTE>:  Given that this module is not intended to be used directly nothing
 is exported.
+
+=head2 init
+
+=head2 log
+
+=head2 remove
+
+=head2 dump
 
 =head1 DEPENDENCIES
 

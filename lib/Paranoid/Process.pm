@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Process.pm,v 0.94 2009/03/17 23:55:30 acorliss Exp $
+# $Id: Process.pm,v 0.95 2010/04/15 23:23:28 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -28,7 +28,7 @@ use Paranoid::Debug qw(:all);
 use POSIX qw(getuid setuid setgid WNOHANG);
 use Carp;
 
-($VERSION) = ( q$Revision: 0.94 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.95 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 @EXPORT    = qw(switchUser);
 @EXPORT_OK = qw(MAXCHILDREN      childrenCount   installChldHandler
@@ -39,12 +39,12 @@ use Carp;
         qw(MAXCHILDREN      childrenCount   installChldHandler
             sigchld          pfork           ptranslateUser
             ptranslateGroup  switchUser      pcapture)
-           ],
+        ],
     pfork => [
         qw(MAXCHILDREN      childrenCount   installChldHandler
             sigchld          pfork)
-    ],
-);
+        ],
+        );
 
 #####################################################################
 #
@@ -366,7 +366,7 @@ Paranoid::Process - Process Management Functions
 
 =head1 VERSION
 
-$Id: Process.pm,v 0.94 2009/03/17 23:55:30 acorliss Exp $
+$Id: Process.pm,v 0.95 2010/04/15 23:23:28 acorliss Exp $
 
 =head1 SYNOPSIS
 

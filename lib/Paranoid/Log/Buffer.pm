@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Buffer.pm,v 0.81 2009/03/05 00:09:34 acorliss Exp $
+# $Id: Buffer.pm,v 0.82 2010/04/15 23:23:28 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -25,7 +25,7 @@ use vars qw($VERSION);
 use Paranoid::Debug qw(:all);
 use Carp;
 
-($VERSION) = ( q$Revision: 0.81 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.82 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 #####################################################################
 #
@@ -121,7 +121,7 @@ sub log ($$$$$$$$) {
         "entering w/($msgtime)($severity)($message)($name)($facility)"
             . "($level)($scope)($barg)",
         PDLEVEL1
-    );
+        );
     pIn();
 
     # Buffer size defaults to twenty entries
@@ -164,7 +164,7 @@ Paranoid::Log::Buffer - Log Buffer Functions
 
 =head1 VERSION
 
-$Id: Buffer.pm,v 0.81 2009/03/05 00:09:34 acorliss Exp $
+$Id: Buffer.pm,v 0.82 2010/04/15 23:23:28 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -202,6 +202,12 @@ entries.
 
 B<NOTE>:  Given that this module is not intended to be used directly nothing
 is exported.
+
+=head2 init
+
+=head2 log
+
+=head2 remove
 
 =head2 Paranoid::Log::Buffer::dump
 

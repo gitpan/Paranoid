@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               Paranoid
-version:            0.23
+version:            0.24
 abstract:           General function library for safer, more secure programming
 author:
     - Arthur Corliss <corliss@digitalmages.com>
@@ -9,6 +9,9 @@ distribution_type:  module
 configure_requires:
     ExtUtils::MakeMaker:  0
 requires:
+    Carp:        0
+    Errno:       0
+    Fcntl:       0
     File::Glob:  0
     Test::More:  0
     Test::Pod:   0

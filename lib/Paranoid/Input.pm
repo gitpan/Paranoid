@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Input.pm,v 0.15 2009/03/17 23:52:35 acorliss Exp $
+# $Id: Input.pm,v 0.16 2010/04/15 23:23:28 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -28,7 +28,7 @@ use Paranoid;
 use Paranoid::Debug qw(:all);
 use Carp;
 
-($VERSION) = ( q$Revision: 0.15 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.16 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 @EXPORT = qw(FSZLIMIT LNSZLIMIT slurp sip tail closeFile
     detaint stringMatch);
@@ -38,8 +38,8 @@ use Carp;
     all => [
         qw(FSZLIMIT LNSZLIMIT slurp sip tail closeFile
             detaint stringMatch addTaintRegex)
-           ],
-);
+        ],
+        );
 
 #####################################################################
 #
@@ -136,7 +136,7 @@ sub slurp ($$;$) {
                     Paranoid::ERROR = pdebug(
                         "file '$file' is larger than " . FSZLIMIT . ' bytes',
                         PDLEVEL1
-                    );
+                        );
                 } else {
                     $rv = 1;
                 }
@@ -336,7 +336,7 @@ sub slurp ($$;$) {
                                 . LNSZLIMIT
                                 . ' -- trimming',
                             PDLEVEL2
-                        );
+                            );
                         $buffers{$filename} = substr $buffers{$filename}, 0,
                             LNSZLIMIT +1;
                         $rv = -1;
@@ -455,7 +455,7 @@ sub slurp ($$;$) {
         login    => qr/[a-zA-Z][\w\.\-]*/sm,
         nometa   => qr/[^\%\`\$\!\@]+/sm,
         number   => qr/[+\-]?[0-9]+(?:\.[0-9]+)?/sm,
-    );
+        );
 
     sub addTaintRegex ($$) {
 
@@ -549,7 +549,7 @@ sub stringMatch ($@) {
     # Usage:    $rv = stringMatch($input, @words);
 
     my $input = shift;
-    my @match = @_;
+    my @match = splice @_;
     my $rv    = 0;
     my @regex;
 
@@ -595,17 +595,27 @@ Paranoid::Input - Paranoid input functions
 
 =head1 VERSION
 
-$Id: Input.pm,v 0.15 2009/03/17 23:52:35 acorliss Exp $
+$Id: Input.pm,v 0.16 2010/04/15 23:23:28 acorliss Exp $
 
 =head1 SYNOPSIS
 
   use Paranoid::Input;
 
-  FSZLIMIT = 64 * 1024;
+  FSZLIMIT  = 64 * 1024;
+  LNSZLIMIT = 2 * 1024;
 
   $rv = slurp($filename, \@lines);
+
+  $rv = sip($filename, \@lines);
+  $rv = sip($filename, \@lines, 1);
+  $rv = tail($filename, \@lines);
+  $rv = tail($filename, \@lines, -100);
+  $rv = tail($filename, \@lines, -100, 1);
+  $rv = closeFile($filename);
+
   addTaintRegex("telephone", qr/\(\d{3}\)\s+\d{3}-\d{4}/);
   $rv = detaint($userInput, "login", \$val);
+
   $rv = stringMatch($input, @strings);
 
 =head1 DESCRIPTION
@@ -692,6 +702,8 @@ was a problem opening or reading the file.
 Like B<sip>, one must explicitly close a file with B<closeFile>.
 
 =head2 closeFile
+
+  $rv = closeFile($filename);
 
 This function closes any open file descriptors that may have been opened via
 B<sip> or B<tail> for the named file.  This returns the value of the B<close>

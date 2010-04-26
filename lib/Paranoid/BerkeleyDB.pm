@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: BerkeleyDB.pm,v 0.82 2009/03/17 23:50:52 acorliss Exp $
+# $Id: BerkeleyDB.pm,v 0.83 2010/04/15 23:15:38 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -27,7 +27,7 @@ use Paranoid::Filesystem qw(pmkdir);
 use BerkeleyDB;
 use Carp;
 
-($VERSION) = ( q$Revision: 0.82 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.83 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 #####################################################################
 #
@@ -44,14 +44,13 @@ sub new (@) {
     #                   DbName  = $name,
     #                   );
 
-    my $class = shift;
-    my %args  = @_;
-    my %init  = (
+    my ( $class, %args ) = @_;
+    my %init = (
         DbDir  => undef,
         DbName => undef,
         Dbs    => {},
         DbEnv  => undef,
-    );
+        );
     my $dbdir = defined $args{DbDir}  ? $args{DbDir}  : 'undef';
     my $dbnm  = defined $args{DbName} ? $args{DbName} : 'undef';
     my ( $self, $tmp );
@@ -63,13 +62,13 @@ sub new (@) {
     if ( defined $dbdir and defined $dbnm ) {
 
         # Create the directory (and let umask determine the permissions)
-        if ( pmkdir( $dbdir, 0777 ) ) {
+        if ( pmkdir($dbdir) ) {
 
             # Create lock file and lock it while doing initialization.  I
             # know, this isn't ideal when creating temporary objects that
             # need only read access, but it's the only way to avoid race
             # conditions if this is the process that creates the database.
-            plock( "$dbdir/db.lock", undef, 0666 );
+            plock( "$dbdir/db.lock", 'write', 0666 );
 
             # Create and bless the object reference
             @init{qw(DbDir DbName)} = ( $dbdir, $dbnm );
@@ -84,8 +83,9 @@ sub new (@) {
                     $tmp = BerkeleyDB::Env->new(
                         '-Home'    => $dbdir,
                         '-ErrFile' => \*STDERR,
-                        '-Flags'   => DB_CREATE | DB_INIT_CDB | DB_INIT_MPOOL,
-                    ) )
+                        '-Flags' => DB_CREATE | DB_INIT_CDB | DB_INIT_MPOOL |
+                            DB_CDB_ALLDB,
+                        ) )
                 ) {
 
                 # Success! Now, create the database
@@ -94,7 +94,7 @@ sub new (@) {
                     '-Filename' => $dbnm,
                     '-Env'      => $self->{DbEnv},
                     '-Flags'    => DB_CREATE,
-                );
+                    );
 
                 # Check if creating the db was successful
                 if ( defined $tmp ) {
@@ -165,7 +165,10 @@ sub addDb ($$) {
             '-Filename' => $dbnm,
             '-Env'      => $self->{DbEnv},
             '-Flags'    => DB_CREATE,
-        );
+            );
+
+        # Release lock
+        punlock("$dbdir/db.lock");
 
         # Store & report the result
         $rv = defined $db ? 1 : 0;
@@ -176,9 +179,6 @@ sub addDb ($$) {
             Paranoid::ERROR =
                 pdebug( "failed to add new database: $dbnm", PDLEVEL1 );
         }
-
-        # Release lock
-        punlock("$dbdir/db.lock");
     }
 
     pOut();
@@ -218,14 +218,14 @@ sub getVal ($$;$) {
         # Requested database exists
         #
         # Lock database for read mode
-        plock( "$dbdir/db.lock", 'shared' );
+        #plock( "$dbdir/db.lock", 'shared' );
 
         unless ( $$dref{$db}->db_get( $key, $val ) == 0 ) {
             pdebug( "no such key exists ($key)", PDLEVEL2 );
         }
 
         # Unlock database
-        punlock("$dbdir/db.lock");
+        #punlock("$dbdir/db.lock");
 
     } else {
 
@@ -277,11 +277,10 @@ sub setVal ($$;$$) {
         # Requested database exists
         #
         # Make sure key is defined
-        if ( defined $key ) {
+        if ( defined $key and defined( $lock = $$dref{$db}->cds_lock ) ) {
 
             # Lock database for write mode
-            plock("$dbdir/db.lock");
-            $lock = $$dref{$db}->cds_lock;
+            #plock("$dbdir/db.lock");
 
             # Check whether setting a new record or deleting one
             if ( defined $val ) {
@@ -300,7 +299,8 @@ sub setVal ($$;$$) {
             # Unlock database
             $$dref{$db}->db_sync;
             $lock->cds_unlock;
-            punlock("$dbdir/db.lock");
+
+            #punlock("$dbdir/db.lock");
 
         } else {
 
@@ -354,15 +354,19 @@ sub getKeys ($;$$) {
     if ( exists $$dref{$db} ) {
 
         # Lock database for read mode
-        plock( "$dbdir/db.lock", 'shared' );
+        #plock( "$dbdir/db.lock", 'shared' );
 
         # Retrieve all the keys
         $key = $val = '';
-        $cursor = $$dref{$db}->db_cursor;
+        $cursor =
+            defined $subRef
+            ? $$dref{$db}->db_cursor(DB_WRITECURSOR)
+            : $$dref{$db}->db_cursor;
         while ( $cursor->c_get( $key, $val, DB_NEXT ) == 0 ) {
-            punlock("$dbdir/db.lock");
 
             if ( defined $key ) {
+
+                #plock( "$dbdir/db.lock", 'write' );
 
                 # The method was passed a subroutine reference, so
                 # unlock the database and call the routine
@@ -372,12 +376,13 @@ sub getKeys ($;$$) {
                 push @keys, $key;
             }
 
-            plock( "$dbdir/db.lock", 'shared' );
+            #plock( "$dbdir/db.lock", 'shared' );
         }
         $cursor->c_close;
+        undef $cursor;
 
         # Unlock database
-        punlock("$dbdir/db.lock");
+        #punlock("$dbdir/db.lock");
 
     } else {
 
@@ -475,7 +480,6 @@ sub DESTROY {
     foreach ( keys %$dref ) {
         if ( defined $$dref{$_} ) {
             pdebug( "sync/close $_", PDLEVEL2 );
-            $$dref{$_}->db_sync;
             $$dref{$_}->db_close;
             delete $$dref{$_};
         }
@@ -501,7 +505,7 @@ Paranoid::BerkeleyDB -- BerkeleyDB concurrent-access Object
 
 =head1 VERSION
 
-$Id: BerkeleyDB.pm,v 0.82 2009/03/17 23:50:52 acorliss Exp $
+$Id: BerkeleyDB.pm,v 0.83 2010/04/15 23:15:38 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -637,6 +641,11 @@ requested.
   @dbs = $db->listDbs();
 
 This method returns a list of databases accessible by this object.
+
+=head2 DESTROY
+
+A DESTROY method is provided which should sync and close an open database, as
+well as release any locks.
 
 =head1 DEPENDENCIES
 

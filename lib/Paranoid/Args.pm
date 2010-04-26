@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Args.pm,v 0.21 2009/03/05 00:06:01 acorliss Exp $
+# $Id: Args.pm,v 0.22 2010/04/15 23:23:28 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -27,7 +27,7 @@ use Carp;
 use Paranoid;
 use Paranoid::Debug qw(:all);
 
-($VERSION) = ( q$Revision: 0.21 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.22 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 @EXPORT      = qw(parseArgs);
 @EXPORT_OK   = qw(parseArgs);
@@ -390,7 +390,7 @@ sub _getArgs ($$$) {
             _pushErrors(
                 "Missing the minimum number of arguments for $option"),
             PDLEVEL1
-        );
+            );
         $rv = 0;
     } else {
         pdebug( "extracted the following arguments: @$lref", PDLEVEL3 );
@@ -572,7 +572,7 @@ sub parseArgs ($$;$) {
             CountShort    => 0,
             Value         => undef,
             %$_,
-        };
+            };
 
         # Create the short/long option for error-reporting purposes
         $oname =
@@ -596,9 +596,9 @@ sub parseArgs ($$;$) {
                 Paranoid::ERROR = pdebug(
                     _pushErrors(
                         "the $$tref{Short} option has more than one template"
-                    ),
+                        ),
                     PDLEVEL1
-                );
+                    );
                 $rv = 0;
 
             } else {
@@ -618,9 +618,9 @@ sub parseArgs ($$;$) {
                 Paranoid::ERROR = pdebug(
                     _pushErrors(
                         "the $$tref{Long} option has more than one template"
-                    ),
+                        ),
                     PDLEVEL1
-                );
+                    );
                 $rv = 0;
 
             } else {
@@ -789,7 +789,7 @@ sub parseArgs ($$;$) {
                         if ( not $$tref{Multiple} and $$tref{Count} > 0 ) {
                             _pushErrors(
                                 "Option --$_ is only allowed to be used once"
-                            );
+                                );
                             $rv = 0;
                             next;
                         }
@@ -876,7 +876,7 @@ Paranoid::Args - Command-linne argument parsing functions
 
 =head1 VERSION
 
-$Id: Args.pm,v 0.21 2009/03/05 00:06:01 acorliss Exp $
+$Id: Args.pm,v 0.22 2010/04/15 23:23:28 acorliss Exp $
 
 =head1 SYNOPSIS
 

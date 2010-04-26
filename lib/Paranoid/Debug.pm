@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Debug.pm,v 0.91 2009/03/05 00:08:07 acorliss Exp $
+# $Id: Debug.pm,v 0.92 2010/04/15 23:23:28 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -28,7 +28,7 @@ use constant PDLEVEL2 => 10;
 use constant PDLEVEL3 => 11;
 use constant PDLEVEL4 => 12;
 
-($VERSION) = ( q$Revision: 0.91 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.92 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 @EXPORT    = qw(PDEBUG pdebug perror pIn pOut psetDebug PDPREFIX);
 @EXPORT_OK = qw(PDEBUG pdebug perror pIn pOut psetDebug PDPREFIX
@@ -37,8 +37,8 @@ use constant PDLEVEL4 => 12;
     all => [
         qw(PDEBUG pdebug perror pIn pOut psetDebug PDPREFIX
             PDLEVEL1 PDLEVEL2 PDLEVEL3 PDLEVEL4)
-           ],
-);
+        ],
+        );
 
 #####################################################################
 #
@@ -86,6 +86,8 @@ sub perror ($) {
     # Usage:    $rv = perror("Foo!");
 
     my $msg = shift;
+
+    $@ = $msg;
 
     return print STDERR "$msg\n";
 }
@@ -168,7 +170,7 @@ Paranoid::Debug - Trace message support for paranoid programs
 
 =head1 VERSION
 
-$Id: Debug.pm,v 0.91 2009/03/05 00:08:07 acorliss Exp $
+$Id: Debug.pm,v 0.92 2010/04/15 23:23:28 acorliss Exp $
 
 =head1 SYNOPSIS
 

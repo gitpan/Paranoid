@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Syslog.pm,v 0.81 2009/03/05 00:09:34 acorliss Exp $
+# $Id: Syslog.pm,v 0.82 2010/04/15 23:23:28 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -22,11 +22,11 @@ use 5.006;
 use strict;
 use warnings;
 use vars qw($VERSION);
-use Paranoid::Debug;
+use Paranoid::Debug qw(:all);
 use Unix::Syslog qw(:macros :subs);
 use Carp;
 
-($VERSION) = ( q$Revision: 0.81 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.82 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 #####################################################################
 #
@@ -91,7 +91,7 @@ sub _transFacility ($) {
         syslog   => LOG_SYSLOG,
         user     => LOG_USER,
         uucp     => LOG_UUCP,
-    );
+        );
 
     return exists $trans{$f} ? $trans{$f} : undef;
 }
@@ -115,7 +115,7 @@ sub _transLevel ($) {
         alert   => LOG_ALERT,
         emerg   => LOG_EMERG,
         error   => LOG_ERR,
-    );
+        );
 
     return exists $trans{$l} ? $trans{$l} : undef;
 }
@@ -217,7 +217,7 @@ sub log ($$$$$$$) {
         "entering w/($msgtime)($severity)($message)($name)"
             . "($facility)($level)($scope)",
         PDLEVEL1
-    );
+        );
     pIn();
 
     # TODO:  Make sure prog name works?
@@ -253,7 +253,7 @@ Paranoid::Log::Syslog - Log Facility Syslog
 
 =head1 VERSION
 
-$Id: Syslog.pm,v 0.81 2009/03/05 00:09:34 acorliss Exp $
+$Id: Syslog.pm,v 0.82 2010/04/15 23:23:28 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -272,6 +272,14 @@ after it.
 
 B<NOTE>:  Given that this module is not intended to be used directly nothing
 is exported.
+
+=head2 init
+
+=head2 log
+
+=head2 remove
+
+=head2 dump
 
 =head1 DEPENDENCIES
 

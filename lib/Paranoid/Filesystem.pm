@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Filesystem.pm,v 0.16 2009/03/17 23:54:32 acorliss Exp $
+# $Id: Filesystem.pm,v 0.18 2010/04/20 22:02:56 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -23,15 +23,17 @@ use strict;
 use warnings;
 use vars qw($VERSION @EXPORT @EXPORT_OK %EXPORT_TAGS);
 use base qw(Exporter);
-use File::Glob qw(bsd_glob);
+use Carp;
+use Cwd qw(realpath);
+use Errno qw(:POSIX);
+use Fcntl qw(:mode);
 use Paranoid;
 use Paranoid::Debug qw(:all);
 use Paranoid::Process qw(ptranslateUser ptranslateGroup);
 use Paranoid::Input;
-use Carp;
-use Cwd qw(realpath);
+use Paranoid::Glob;
 
-($VERSION) = ( q$Revision: 0.16 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.18 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 @EXPORT = qw(
     preadDir     psubdirs    pfiles    pglob
@@ -53,12 +55,10 @@ use Cwd qw(realpath);
             prmR         ptouch      ptouchR   ptranslatePerms
             pchmod       pchmodR     pchown    pchownR
             pwhich)
-           ],
-);
+        ],
+        );
 
-use constant GLOBCHAR  => '\*\?\{\}\[\]';
-use constant GLOBCHECK => '\*|\?|\{[^\}]*\}|\[[^\]]*\]';
-use constant FNINVALID => '\'"\|\`\$';
+use constant PERMMASK => 07777;
 
 #####################################################################
 #
@@ -66,209 +66,76 @@ use constant FNINVALID => '\'"\|\`\$';
 #
 #####################################################################
 
-{
-    my $maxlinks = 20;
-
-    sub MAXLINKS : lvalue {
-
-        # Purpose:  Gets/sets $maxlinks
-        # Returns:  $maxlinks
-        # Usage:    $max = MAXLINKS;
-        # Usage:    MAXLINKS = 40;
-
-        $maxlinks;
-    }
-}
-
-# Notes:  all recursive programs, with the exception of touch, should exit
-# with a false value when called with non-existent values.  touch should
-# create those files, assuming the path exists.
-#
-# Once recursion begins errors for all programs are reported, with the
-# assumption that the operation failed for some other reason (no invalid or
-# non-existing files should be attempted since pure directory reads should be
-# used at that point).
-
-sub _recurseWrapper {
-
-    # Purpose:  Generic wrapper for ptouch, prm, etc., to provide a
-    #           recursive capability for all of them.  This also provides
-    #           symlink filtering for all operations.
-    # Returns:  True (1) for successful calls, False (0) for any errors
-    # Usage:    $rv = _recurseWrapper($mode, $followLinks, \%errRef, @args);
-
-    my $mode        = shift;
-    my $followLinks = shift || 0;
-    my $errRef      = shift;
-    my @dargs       = @_;
-    my $rv          = 1;
-    my ( $op, $i, $o, @expanded );
-    my ( @tmp, $target, @entries );
-    my %subErrors;
-
-    # Remove the timestamp from the args
-    if ( $mode eq 'pchownR' ) {
-        $op = [ splice @dargs, 0, 2 ];
-    } elsif ( $mode ne 'prmR' ) {
-        $op = shift @dargs;
-    }
-    $o = defined $op ? $op : 'undef';
-
-    pdebug( "entering with ($mode)($followLinks)($errRef)($o)(@dargs)",
-        PDLEVEL1 );
-    pIn();
-
-    # Expand all file arguments
-    $rv = pglob( \%subErrors, \@expanded, @dargs );
-    %$errRef = ( %$errRef, %subErrors );
-
-    # Check for errors if this is ptouchR
-    if ( $mode eq 'ptouchR' and scalar keys %subErrors ) {
-        Paranoid::ERROR =
-            pdebug( 'invalid glob matches in ptouchR mode', PDLEVEL2 );
-        $rv = 0;
-    }
-
-    # Check error status so far
-    if ($rv) {
-
-        # Process glob list
-        foreach $target (@expanded) {
-            if (   ( $followLinks && -d $target )
-                || ( -d $target && !-l $target ) ) {
-
-                # Try to read the target directory
-                if ( preadDir( $target, \@entries ) ) {
-
-                    # Success! Call ourselves recursively on the entries
-                    if (@entries) {
-                        $rv = _recurseWrapper(
-                            $mode,
-                            $followLinks,
-                            \%subErrors, (
-                                  $mode eq 'pchownR' ? ( @$op, @entries )
-                                : $mode ne 'prmR' ? ( $op, @entries )
-                                : (@entries) ) );
-                        %$errRef = ( %$errRef, %subErrors );
-                    }
-                } else {
-
-                    # Failed to read the directory -- set the return value
-                    $$errRef{$target} = "failed to read the directory: $!";
-                    $rv = 0;
-                }
-            }
-        }
-
-        # If there's been no errors so far
-        if ($rv) {
-
-            # Filter out symlinks if requested
-            @expanded = grep { !-l $_ } @expanded
-                unless $followLinks
-                    or $mode eq 'prmR';
-
-            # Process list
-            if (@expanded) {
-                if ( $mode eq 'ptouchR' ) {
-                    $rv = ptouch( \%subErrors, $op, @expanded );
-                } elsif ( $mode eq 'prmR' ) {
-                    $rv = prm( \%subErrors, @expanded );
-                } elsif ( $mode eq 'pchmodR' ) {
-                    $rv = pchmod( \%subErrors, $op, @expanded );
-                } elsif ( $mode eq 'pchownR' ) {
-                    $rv = pchown( \%subErrors, @$op, @expanded );
-                } else {
-                    Paranoid::ERROR =
-                        pdebug( "called with unknown mode ($mode)",
-                        PDLEVEL1 );
-                    $rv = 0;
-                }
-            }
-            %$errRef = ( %$errRef, %subErrors ) unless $rv;
-        }
-    }
-
-    pOut();
-    pdebug( "leaving in mode $mode w/rv: $rv", PDLEVEL1 );
-
-    return $rv;
-}
-
 sub pmkdir ($;$) {
 
     # Purpose:  Simulates a 'mkdir -p' command in pure Perl
     # Returns:  True (1) if all targets were successfully created,
     #           False (0) if there are any errors
-    # Usage:    $rv = pmkdir("/foo");
+    # Usage:    $rv = pmkdir("/foo/{a1,b2}");
     # Usage:    $rv = pmkdir("/foo", 0750);
 
-    my $path = shift;
-    my $mode = shift;
+    my ( $path, $mode ) = @_;
+    my ( $dirs, $directory, @parts, $i );
     my $uarg = defined $mode ? $mode : 'undef';
-    my $rv   = 1;
-    my ( $dpath, @expanded, @elements, $testPath );
+    my $rv = 1;
 
     # Validate arguments
-    croak 'Mandatory first argument must be a defined path'
-        unless defined $path && length $path;
+    unless ( defined $path && length $path ) {
+        Paranoid::ERROR =
+            pdebug( 'Mandatory first argument must be a defined path',
+            PDLEVEL1 );
+        return 0;
+    }
 
     pdebug( "entering w/($path)($uarg)", PDLEVEL1 );
     pIn();
 
+    # Create a glob object if we weren't handed one.
+    $dirs =
+        ref $path eq 'Paranoid::Glob'
+        ? $path
+        : Paranoid::Glob->new( globs => [$path] );
+
+    # Leave Paranoid::Glob's errors in place if there was a problem
+    $rv = 0 unless defined $dirs;
+
     # Set and detaint mode
-    $mode = umask ^ 0777 unless defined $mode;
-    unless ( detaint( $mode, 'number', \$mode ) ) {
-        Paranoid::ERROR = pdebug( 'failed to detaint mode', PDLEVEL1 );
-        pOut();
-        pdebug( "leaving w/rv: $rv", PDLEVEL1 );
-        return 0;
+    if ($rv) {
+        $mode = umask ^ PERMMASK unless defined $mode;
+        unless ( detaint( $mode, 'number', \$mode ) ) {
+            Paranoid::ERROR =
+                pdebug( 'invalid mode argument passed', PDLEVEL1 );
+            $rv = 0;
+        }
     }
 
-    # Detaint input and filter through the shell glob
-    if ( detaint( $path, 'fileglob', \$dpath ) ) {
-        if ( @expanded = bsd_glob($dpath) ) {
+    # Start creating directories
+    if ($rv) {
 
-            # Create all directories
-            foreach (@expanded) {
-                if ( -d $_ ) {
-                    pdebug( "directory already exists: $_", PDLEVEL2 );
-                } else {
-                    $testPath = '';
-                    @elements = split m#/+#sm, $_;
-                    $elements[0] = '/' if $_ =~ m#^/#sm;
-                    foreach (@elements) {
-                        $testPath .= '/' if length $testPath;
-                        $testPath .= $_;
-                        unless ( -d $testPath ) {
-                            if (detaint( $testPath, 'filename', \$testPath ) )
-                            {
-                                if ( mkdir $testPath, $mode ) {
-                                    pdebug( "created $testPath", PDLEVEL2 );
-                                } else {
-                                    $rv = 0;
-                                    Paranoid::ERROR = pdebug(
-                                        "failed to create $testPath: $!",
-                                        PDLEVEL2 );
-                                    last;
-                                }
-                            } else {
-                                Paranoid::ERROR = pdebug(
-                                    'failed to detaint mkdir args: '
-                                        . "$testPath $mode",
-                                    PDLEVEL2
-                                );
-                                $rv = 0;
-                                last;
-                            }
-                        }
-                    }
+        # Iterate over each directory in the glob
+        PMKDIR: foreach $directory (@$dirs) {
+            pdebug( "processing $directory", PDLEVEL2 );
+
+            # Skip directories already present
+            next if -d $directory;
+
+            # Otherwise, split so we can backtrack to the first available
+            # subdirectory and start creating subdirectories from there
+            @parts = split m#/+#sm, $directory;
+            $i = $parts[0] eq '' ? 1 : 0;
+            $i++ while $i < $#parts and -d join '/', @parts[ 0 .. $i ];
+            while ( $i <= $#parts ) {
+                unless ( mkdir join( '/', @parts[ 0 .. $i ] ), $mode ) {
+
+                    # Error out and halt all work
+                    Paranoid::ERROR =
+                        pdebug( "failed to create $directory: $!", PDLEVEL1 );
+                    $rv = 0;
+                    last PMKDIR;
                 }
+                $i++;
             }
         }
-    } else {
-        Paranoid::ERROR = pdebug( "failed to detaint: $path", PDLEVEL1 );
-        $rv = 0;
     }
 
     pOut();
@@ -277,7 +144,7 @@ sub pmkdir ($;$) {
     return $rv;
 }
 
-sub prm ($@) {
+sub prm (@) {
 
     # Purpose:  Simulates a "rm -f" command in pure Perl
     # Returns:  True (1) if all targets were successfully removed,
@@ -285,59 +152,93 @@ sub prm ($@) {
     # Usage:    $rv = prm(\%errors, "/foo");
 
     my $errRef  = shift;
-    my @targets = @_;
+    my @targets = grep {defined} splice @_;
     my $rv      = 1;
-    my ( @expanded, @tmp, $target );
+    my ( $glob, $tglob, @fstat );
 
     # Validate arguments
     croak 'Mandatory first argument must be a hash reference'
         unless defined $errRef && ref $errRef eq 'HASH';
-    croak 'Mandatory remaining arguments must be present' unless @targets;
-    foreach (@targets) {
-        croak 'Undefined or zero-length arguments passed as file arguments'
-            unless defined $_ && length $_ > 0;
-    }
     %$errRef = ();
 
-    pdebug( "entering w/($errRef)(" . join( ', ', @targets ) . ')',
-        PDLEVEL1 );
+    pdebug( "entering w/(@targets)", PDLEVEL1 );
     pIn();
 
-    # Expand file argument globs
-    $rv = pglob( $errRef, \@expanded, @targets );
+    # Create a glob object for interal use
+    $glob = new Paranoid::Glob;
 
-    # Remove targets
+    # Add the contents of all the passed globs/strings
+    foreach (@targets) {
+
+        # Make sure we're dealing with globs
+        $tglob =
+            ref $_ eq 'Paranoid::Glob'
+            ? $_
+            : Paranoid::Glob->new( globs => [$_] );
+
+        unless ( defined $tglob ) {
+
+            # Error out
+            $rv = 0;
+            last;
+        }
+
+        # Add the contents of the temporary glob
+        push @$glob, @$tglob;
+    }
+
+    # Start removing files
     if ($rv) {
-        foreach $target ( reverse sort @expanded ) {
-            pdebug( "deleting target $target", PDLEVEL2 );
 
-            # Is the directory there (and not a symlink)?
-            if ( -d $target && !-l $target ) {
+        # Consolidate the entries
+        $glob->consolidate;
 
-                # Yes it is -- kill it
-                unless ( rmdir $target ) {
+        # Iterate over entries
+        foreach ( reverse @$glob ) {
+            pdebug( "processing $_", PDLEVEL2 );
 
-                    # Report our incompetence
-                    Paranoid::ERROR =
-                        pdebug( "Failed to delete $target: $!", PDLEVEL2 );
-                    $$errRef{$target} = $!;
+            # Stat the file
+            @fstat = lstat $_;
+
+            # If the file is missing, consider the removal successful and
+            # move on.
+            next if $! == ENOENT;
+            unless (@fstat) {
+
+                # Report remaining errors (permission denied, etc.)
+                $rv = 0;
+                $$errRef{$_} = $!;
+                pdebug( "failed to remove $_: $!", PDLEVEL1 );
+                next;
+            }
+
+            if ( S_ISDIR( $fstat[2] ) ) {
+
+                # Remove directories
+                unless ( rmdir $_ ) {
+
+                    # Record errors
                     $rv = 0;
+                    $$errRef{$_} = $!;
+                    pdebug( "failed to remove $_: $!", PDLEVEL1 );
                 }
 
-            } elsif ( -e $target || -l $target ) {
+            } else {
 
-                # No it isn't, so do a normal unlink
-                unless ( unlink $target ) {
+                # Remove all non-directories
+                unless ( unlink $_ ) {
 
-                    # Well, nice try, anyway...
-                    Paranoid::ERROR =
-                        pdebug( "Failed to delete $target: $!", PDLEVEL2 );
-                    $$errRef{$target} = $!;
+                    # Record errors
                     $rv = 0;
+                    $$errRef{$_} = $!;
+                    pdebug( "failed to remove $_: $!", PDLEVEL1 );
                 }
             }
         }
     }
+
+    Paranoid::ERROR = pdebug( "Failed to delete targets", PDLEVEL1 )
+        unless $rv;
 
     pOut();
     pdebug( "leaving w/rv: $rv", PDLEVEL1 );
@@ -353,19 +254,46 @@ sub prmR ($@) {
     # Usage:    $rv = prmR(\%errors, "/foo");
 
     my $errRef  = shift;
-    my @targets = @_;
+    my @targets = grep {defined} splice @_;
+    my $rv      = 1;
+    my ( $glob, $tglob );
 
-    # Validate arguments
-    croak 'Mandatory first argument must be a hash reference'
-        unless defined $errRef && ref $errRef eq 'HASH';
-    croak 'Mandatory remaining arguments must be present' unless @targets;
+    pdebug( 'entering', PDLEVEL1 );
+    pIn();
+
+    # Create a glob object for interal use
+    $glob = new Paranoid::Glob;
+
+    # Add the contents of all the passed globs/strings
     foreach (@targets) {
-        croak 'Undefined or zero-length arguments passed as file arguments'
-            unless defined $_ && length $_ > 0;
-    }
-    %$errRef = ();
 
-    return _recurseWrapper( 'prmR', 0, $errRef, @targets );
+        # Make sure we're dealing with globs
+        $tglob =
+            ref $_ eq 'Paranoid::Glob'
+            ? $_
+            : Paranoid::Glob->new( globs => [$_] );
+
+        unless ( defined $tglob ) {
+
+            # Error out
+            $rv = 0;
+            last;
+        }
+
+        # Add the contents of the temporary glob
+        push @$glob, @$tglob;
+    }
+
+    if ($rv) {
+
+        # Load the directory tree and execute prm
+        $rv = $glob->recurse( 0, 1 ) && prm( $errRef, $glob );
+    }
+
+    pOut();
+    pdebug( "leaving w/rv: $rv", PDLEVEL1 );
+
+    return $rv;
 }
 
 sub preadDir ($$;$) {
@@ -377,67 +305,56 @@ sub preadDir ($$;$) {
     #           False (0) if there are any errors
     # Usage:    $rv = preadDir("/tmp", \@entries);
 
-    my $dir     = shift;
-    my $aref    = shift;
-    my $noLinks = shift || 0;
-    my $rv      = 0;
-    my ( $i, $fh );
+    my ( $dir, $aref, $noLinks ) = @_;
+    my $adir = defined $dir ? $dir : 'undef';
+    my $rv = 1;
+    my $fh;
 
     # Validate arguments
-    croak 'Mandatory first argument must be a defined directory path'
-        unless defined $dir;
     croak 'Mandatory second argument must be an array reference'
         unless defined $aref && ref $aref eq 'ARRAY';
+    $noLinks = 0 unless defined $noLinks;
 
-    pdebug( "entering w/($dir)($aref)", PDLEVEL1 );
+    pdebug( "entering w/($adir)($aref)($noLinks)", PDLEVEL1 );
     pIn();
     @$aref = ();
 
     # Validate directory and exit early, if need be
-    unless ( -e $dir && -d _ && -r _ ) {
-        if ( !-e _ ) {
-            Paranoid::ERROR =
-                pdebug( "directory ($dir) does not exist", PDLEVEL1 );
-        } elsif ( !-d _ ) {
-            Paranoid::ERROR = pdebug( "$dir is not a directory", PDLEVEL1 );
-        } else {
-            Paranoid::ERROR = pdebug(
-                "directory ($dir) is not readable by the effective user",
-                PDLEVEL1 );
-        }
-        pOut();
-        pdebug( "leaving w/rv: $rv", PDLEVEL1 );
-        return $rv;
+    unless ( defined $dir and -e $dir and -d _ and -r _ ) {
+        $rv = 0;
+        Paranoid::ERROR = pdebug( (
+                  !defined $dir ? "undefined value passed as directory name"
+                : !-e _         ? "directory ($dir) does not exist"
+                : !-d _         ? "$dir is not a directory"
+                : "directory ($dir) is not readable by the effective user"
+            ),
+            PDLEVEL1
+            );
     }
 
-    # Read the directory's contents
-    if ( opendir $fh, $dir ) {
+    if ($rv) {
 
-        # Get the list, filtering out '.' & '..'
-        @$aref = grep !/^\.\.?$/sm, readdir $fh;
-        closedir $fh;
+        # Read the directory's contents
+        $rv = opendir $fh, $dir;
 
-        # Prepend the directory name to each entry
-        foreach (@$aref) { $_ = "$dir/$_" }
+        if ($rv) {
 
-        # Filter out symlinks, if necessary
-        if ($noLinks) {
-            $i = 0;
-            while ( $i <= $#{$aref} ) {
-                if ( -l $$aref[$i] ) {
-                    splice @$aref, $i, 1;
-                } else {
-                    ++$i;
-                }
+            # Get the list, filtering out '.' & '..'
+            foreach ( readdir $fh ) {
+                push @$aref, "$dir/$_" unless m/^\.\.?$/sm;
             }
-        }
+            closedir $fh;
 
-        $rv = 1;
-    } else {
-        Paranoid::ERROR =
-            pdebug( "error opening directory ($dir): $!", PDLEVEL1 );
+            # Filter out symlinks, if necessary
+            @$aref = grep { !-l $_ } @$aref if $noLinks;
+
+        } else {
+            Paranoid::ERROR =
+                pdebug( "error opening directory ($dir): $!", PDLEVEL1 );
+        }
     }
-    pdebug( "returning @{[ scalar @$aref ]} entries", PDLEVEL1 );
+
+    pdebug( "returning @{[ scalar @$aref ]} entries", PDLEVEL2 );
 
     pOut();
     pdebug( "leaving w/rv: $rv", PDLEVEL1 );
@@ -455,28 +372,25 @@ sub psubdirs ($$;$) {
     # Usage:    $rv = psubdirs($dir, \@entries);
     # Usage:    $rv = psubdirs($dir, \@entries, 1);
 
-    my $dir     = shift;
-    my $aref    = shift;
-    my $noLinks = shift || 0;
-    my $rv      = 0;
-    my @dirList;
+    my ( $dir, $aref, $noLinks ) = @_;
+    my $adir = defined $dir ? $dir : 'undef';
+    my $rv = 0;
 
     # Validate arguments
-    croak 'Mandatory first argument must be a defined directory path'
-        unless defined $dir;
     croak 'Mandatory second argument must be an array reference'
         unless defined $aref && ref $aref eq 'ARRAY';
+    $noLinks = 0 unless defined $noLinks;
 
-    pdebug( "entering w/($dir)($aref)($noLinks)", PDLEVEL1 );
+    pdebug( "entering w/($adir)($aref)($noLinks)", PDLEVEL1 );
     pIn();
 
     # Empty target array and retrieve list
-    @$aref = ();
-    $rv = preadDir( $dir, \@dirList, $noLinks );
+    $rv = preadDir( $dir, $aref, $noLinks );
 
     # Filter out all non-directories
-    foreach (@dirList) { push @$aref, $_ if -d $_ }
-    pdebug( "returning @{[ scalar @$aref ]} entries", PDLEVEL1 );
+    @$aref = grep { -d $_ } @$aref if $rv;
+
+    pdebug( "returning @{[ scalar @$aref ]} entries", PDLEVEL2 );
 
     pOut();
     pdebug( "leaving w/rv: $rv", PDLEVEL1 );
@@ -491,31 +405,29 @@ sub pfiles ($$;$) {
     #           optionally filter out symlinks to files as well.
     # Returns:  True (1) if the directory read was successful,
     #           False (0) if there are any errors
-    # Usage:    $rv = psubdirs($dir, \@entries);
-    # Usage:    $rv = psubdirs($dir, \@entries, 1);
+    # Usage:    $rv = pfiles($dir, \@entries);
+    # Usage:    $rv = pfiles($dir, \@entries, 1);
 
-    my $dir     = shift;
-    my $aref    = shift;
-    my $noLinks = shift;
-    my $rv      = 0;
-    my @fileList;
+    my ( $dir, $aref, $noLinks ) = @_;
+    my $adir = defined $dir ? $dir : 'undef';
+    my $rv = 0;
 
     # Validate arguments
-    croak 'Mandatory first argument must be a defined directory path'
-        unless defined $dir;
     croak 'Mandatory second argument must be an array reference'
         unless defined $aref && ref $aref eq 'ARRAY';
+    $noLinks = 0 unless defined $noLinks;
 
     pdebug( "entering w/($dir)($aref)", PDLEVEL1 );
     pIn();
 
     # Empty target array and retrieve list
     @$aref = ();
-    $rv = preadDir( $dir, \@fileList, $noLinks );
+    $rv = preadDir( $dir, $aref, $noLinks );
 
     # Filter out all non-files
-    foreach (@fileList) { push @$aref, $_ if -f $_ }
-    pdebug( "returning @{[ scalar @$aref ]} entries", PDLEVEL1 );
+    @$aref = grep { -f $_ } @$aref if $rv;
+
+    pdebug( "returning @{[ scalar @$aref ]} entries", PDLEVEL2 );
 
     pOut();
     pdebug( "leaving w/rv: $rv", PDLEVEL1 );
@@ -576,20 +488,16 @@ sub ptranslateLink ($;$) {
     my $link           = shift;
     my $fullyTranslate = shift || 0;
     my $nLinks         = 0;
-    my ( @elements, $i, $target );
+    my $l              = defined $link ? $link : 'undef';
+    my ( $i, $target );
 
-    # Validate arguments
-    croak 'Mandatory first argument must be a defined symlink filename'
-        unless defined $link;
-
-    pdebug( "entering w/($link)($fullyTranslate)", PDLEVEL1 );
+    pdebug( "entering w/($l)($fullyTranslate)", PDLEVEL1 );
     pIn();
 
     # Validate link and exit early, if need be
-    unless ( -e $link ) {
+    unless ( defined $link and scalar lstat $link ) {
         Paranoid::ERROR =
-            pdebug( "link ($link) or target does not exist on filesystem",
-            PDLEVEL1 );
+            pdebug( "link ($l) does not exist on filesystem", PDLEVEL1 );
         pOut();
         pdebug( 'leaving w/rv: undef', PDLEVEL1 );
         return undef;
@@ -660,7 +568,8 @@ sub pglob ($@) {
 
     my @args = @_;
     my $rv   = 1;
-    my ( $report, $glob, $href, $aref, @tmp, $f );
+    my $glob = new Paranoid::Glob;
+    my ( $report, $href, $aref );
 
     # Validate arguments
     croak 'Mandatory first argument must be a defined glob or a '
@@ -674,8 +583,6 @@ sub pglob ($@) {
         # New style invocation
         croak 'Mandatory second argument must be an array reference'
             unless ref $args[1] eq 'ARRAY';
-        croak 'Mandatory third argument must be a defined file glob'
-            unless defined $args[2];
 
         $href  = shift @args;
         $aref  = shift @args;
@@ -685,62 +592,31 @@ sub pglob ($@) {
     } else {
 
         # Old-style invocation
-        croak 'Mandatory first argument must be a defined file glob'
-            unless defined $args[0];
         croak 'Mandatory second argument must be an array reference'
             unless ref $args[1] eq 'ARRAY';
 
-        $glob = shift @args;
-        $aref = shift @args;
-        @args = ($glob);
+        $aref = $args[1];
+        splice @args, 1;
         $href = {};
 
-        $report = "($glob)($aref)";
+        $report = "(@args)($aref)";
     }
     @$aref = ();
+    @args = grep {defined} @args;
 
     pdebug( "entering w/$report", PDLEVEL1 );
     pIn();
 
-    # Process each glob
-    foreach (@args) {
+    # Process each glob(s)
+    if ( $glob->addGlobs(@args) ) {
 
-        # Did the glob detaint?
-        if ( detaint( $_, 'fileglob', \$glob ) ) {
+        # All globs successfully detainted
+        $glob->consolidate;
+        @$aref = $glob->exists;
 
-            # Yupper, so let's see if the string matches a literal file on
-            # the filesystem
-            if ( -l $glob or -e _ ) {
-
-                # Yupper (part II), let's add it to the list
-                push @$aref, $glob;
-
-            } else {
-
-                # Nope, so let's run it through the glob function for possible
-                # expansion and see what gets returned
-                @tmp = bsd_glob($glob);
-
-                # Go through the shell glob results and test for the
-                # existence of each file, pushing only those that exist
-                # onto the array
-                foreach $f (@tmp) {
-                    if ( -l $f or -e _ ) {
-                        push @$aref, $f;
-                    } else {
-                        $$href{$f} = 'file not found';
-                    }
-                }
-                pdebug( "Matches from glob: @$aref", PDLEVEL2 );
-            }
-        } else {
-
-            # The glob failed to detaint -- report it and error out
-            Paranoid::ERROR =
-                pdebug( "glob failed to detaint:  $_", PDLEVEL1 );
-            $$href{$_} = 'glob failed to detaint';
-            $rv = 0;
-        }
+    } else {
+        @$aref = ();
+        $rv    = 0;
     }
 
     pdebug( "returning @{[ scalar @$aref ]} matches", PDLEVEL1 );
@@ -758,84 +634,88 @@ sub ptouch ($$@) {
     #           False (0) if there are any errors
     # Usage:    $rv = ptouch(\%errors, $epoch, "/foo/*");
 
-    my $errRef  = shift;
-    my $stamp   = shift;
-    my @targets = @_;
-    my $sarg    = defined $stamp ? $stamp : 'undef';
-    my $rv      = 1;
-    my ( $fd, @expanded, $glob, @tmp, $target );
+    my ( $errRef, $stamp ) = splice @_, 0, 2;
+    my @targets = grep {defined} splice @_;
+    my $sarg = defined $stamp ? $stamp : 'undef';
+    my $glob = new Paranoid::Glob;
+    my $rv   = 1;
+    my $irv  = 1;
+    my ( $tglob, $fh, $target );
 
     # Validate arguments
-    croak 'Mandatory first argument must be an array reference'
+    croak 'Mandatory first argument must be a hash reference'
         unless defined $errRef && ref $errRef eq 'HASH';
-    croak 'Mandatory remaining arguments must have at least one target'
-        unless @targets;
-    foreach (@targets) {
-        croak 'Undefined or zero-length arguments passed as file arguments '
-            . 'to ptouch()'
-            unless defined $_ && length $_;
-    }
     %$errRef = ();
 
-    pdebug( "entering w/($errRef)($sarg)(" . join( ', ', @targets ) . ')',
-        PDLEVEL1 );
+    pdebug(
+        "entering w/($errRef)($sarg)"
+            . "(@{[ join ',', map { defined $_ ? $_ : 'undef' } @targets ]})",
+        PDLEVEL1
+        );
     pIn();
 
     # Apply the default timestamp if omitted
     $stamp = time unless defined $stamp;
 
-    # Detaint args and filter through the shell glob
+    # Add the contents of all the passed globs/strings
     foreach (@targets) {
-        if ( detaint( $_, 'fileglob', \$glob ) ) {
-            if ( @tmp = bsd_glob($glob) ) {
-                push @expanded, @tmp;
-            }
-        } else {
-            Paranoid::ERROR = $$errRef{$_} =
-                pdebug( "failed to detaint $_", PDLEVEL2 );
+
+        # Make sure we're dealing with globs
+        $tglob =
+            ref $_ eq 'Paranoid::Glob'
+            ? $_
+            : Paranoid::Glob->new( globs => [$_] );
+
+        unless ( defined $tglob ) {
+
+            # Error out
+            $rv = 0;
+            last;
+        }
+
+        # Add the contents of the temporary glob
+        push @$glob, @$tglob;
+    }
+
+    if ($rv) {
+        unless ( detaint( $stamp, 'number', \$sarg ) ) {
+            Paranoid::ERROR =
+                pdebug( "Invalid characters in timestamp: $stamp", PDLEVEL2 );
             $rv = 0;
         }
     }
 
-    # Touch the final targets
+    # Start touching stuff
     if ($rv) {
-        foreach $target (@expanded) {
-            pdebug( "processing target $target", PDLEVEL2 );
 
-            # Detaint the filename
-            if ( detaint( $target, 'filename', \$glob ) ) {
+        # Copy over the detainted stamp value
+        $stamp = $sarg;
 
-                # Filename detainted
-                $target = $glob;
+        # Consolidate the entries
+        $glob->consolidate;
 
-                # Create the target if it does not exist
-                unless ( -e $target ) {
-                    pdebug( "creating empty file ($target)", PDLEVEL2 );
-                    if ( open $fd, '>>', $target ) {
-                        close $fd;
-                    } else {
-                        $$errRef{$target} = $!;
-                        $rv = 0;
-                    }
-                }
+        # Iterate over entries
+        foreach $target (@$glob) {
+            pdebug( "processing $target", PDLEVEL2 );
+            $irv = 1;
 
-                # Touch the file
-                if ( detaint( $stamp, 'number', \$glob ) ) {
-                    $stamp = $glob;
-                    $rv = utime $stamp, $stamp, $target if $rv;
+            # Create the target if it does not exist
+            unless ( -e $target ) {
+                pdebug( "creating empty file ($target)", PDLEVEL2 );
+                if ( open $fh, '>>', $target ) {
+                    close $fh;
                 } else {
-                    Paranoid::ERROR =
-                        pdebug( "Invalid characters in timestamp: $stamp",
-                        PDLEVEL2 );
+                    $$errRef{$target} = $!;
+                    $irv = $rv = 0;
+                }
+            }
+
+            # Touch the file
+            if ($irv) {
+                unless ( utime $stamp, $stamp, $target ) {
+                    $$errRef{$target} = $!;
                     $rv = 0;
                 }
-            } else {
-
-                # Failed detainting
-                Paranoid::ERROR = $$errRef{$target} =
-                    pdebug( "Invalid characters in filename: $target",
-                    PDLEVEL2 );
-                $rv = 0;
             }
         }
     }
@@ -851,30 +731,60 @@ sub ptouchR ($$$@) {
     # Purpose:  Calls ptouch recursively
     # Returns:  True (1) if all targets were successfully touched,
     #           False (0) if there are any errors
-    # Usage:    $rv = ptouch(\%errors, $epoch, "/foo");
+    # Usage:    $rv = ptouchR(1, \%errors, $epoch, "/foo");
 
-    my $followLinks = shift;
-    my $errRef      = shift;
-    my $stamp       = shift;
-    my @targets     = @_;
+    my ( $follow, $errRef, $epoch ) = splice @_, 0, 3;
+    my @targets = grep {defined} splice @_;
+    my $rv = 1;
+    my ( $glob, $tglob );
 
-    # Validate arguments
-    croak 'Mandatory second argument must be a hash reference'
-        unless defined $errRef && ref $errRef eq 'HASH';
-    croak 'Mandatory remaing arguments must be at least one target'
-        unless @targets;
+    pdebug( 'entering', PDLEVEL1 );
+    pIn();
+
+    # Create a glob object for interal use
+    $glob = new Paranoid::Glob;
+
+    # Add the contents of all the passed globs/strings
     foreach (@targets) {
-        croak 'Undefined or zero-length arguments passed as file arguments '
-            . 'to ptouchR()'
-            unless defined $_ && length $_ > 0;
-    }
-    %$errRef = ();
 
-    return _recurseWrapper( 'ptouchR', $followLinks, $errRef, $stamp,
-        @targets );
+        # Make sure we're dealing with globs
+        $tglob =
+            ref $_ eq 'Paranoid::Glob'
+            ? $_
+            : Paranoid::Glob->new( globs => [$_] );
+
+        unless ( defined $tglob ) {
+
+            # Error out
+            $rv = 0;
+            last;
+        }
+
+        # Add the contents of the temporary glob
+        push @$glob, @$tglob;
+    }
+
+    if ($rv) {
+
+        # Load the directory tree and execute prm
+        $rv =
+            $glob->recurse( $follow, 1 ) && ptouch( $errRef, $epoch, $glob );
+    }
+
+    pOut();
+    pdebug( "leaving w/rv: $rv", PDLEVEL1 );
+
+    return $rv;
 }
 
 sub ptranslatePerms ($) {
+
+    # Purpose:  Translates symbolic permissions (as supported by userland
+    #           chmod, etc.) into the octal permissions.
+    # Returns:  Numeric permissions if valid symbolic permissions were passed,
+    #           undef otherwise
+    # Usage:    $perm = ptranslatePerms('ug+srw');
+
     my $perm = shift;
     my $rv   = undef;
     my ( @tmp, $o, $p );
@@ -892,16 +802,16 @@ sub ptranslatePerms ($) {
         # Translate symbolic representation
         $o = $p = 00;
         @tmp = ( $1, $2, $3 );
-        $o = 0700 if $tmp[0] =~ /u/sm;
-        $o |= 0070 if $tmp[0] =~ /g/sm;
-        $o |= 0007 if $tmp[0] =~ /o/sm;
-        $p = 0444 if $tmp[2] =~ /r/sm;
-        $p |= 0222 if $tmp[2] =~ /w/sm;
-        $p |= 0111 if $tmp[2] =~ /x/sm;
+        $o = S_IRWXU if $tmp[0] =~ /u/sm;
+        $o |= S_IRWXG if $tmp[0] =~ /g/sm;
+        $o |= S_IRWXO if $tmp[0] =~ /o/sm;
+        $p = ( S_IRUSR | S_IRGRP | S_IROTH ) if $tmp[2] =~ /r/sm;
+        $p |= ( S_IWUSR | S_IWGRP | S_IWOTH ) if $tmp[2] =~ /w/sm;
+        $p |= ( S_IXUSR | S_IXGRP | S_IXOTH ) if $tmp[2] =~ /x/sm;
         $p &= $o;
-        $p |= 01000 if $tmp[2] =~ /t/sm;
-        $p |= 02000 if $tmp[2] =~ /s/sm && $tmp[0] =~ /g/sm;
-        $p |= 04000 if $tmp[2] =~ /s/sm && $tmp[0] =~ /u/sm;
+        $p |= S_ISVTX if $tmp[2] =~ /t/sm;
+        $p |= S_ISGID if $tmp[2] =~ /s/sm && $tmp[0] =~ /g/sm;
+        $p |= S_ISUID if $tmp[2] =~ /s/sm && $tmp[0] =~ /u/sm;
 
     } else {
 
@@ -917,7 +827,7 @@ sub ptranslatePerms ($) {
             : 'leaving w/rv: undef'
         ),
         PDLEVEL1
-    );
+        );
 
     return $rv;
 }
@@ -929,28 +839,24 @@ sub pchmod ($$@) {
     #           False (0) if there are any errors
     # Usage:    $rv = pchmod(\%errors, $perms, "/foo");
 
-    my $errRef  = shift;
-    my $perms   = shift;
-    my @targets = @_;
-    my $rv      = 0;
-    my ( $ptrans, $target, $cperms, $addPerms, @expanded, @tmp );
+    my ( $errRef, $perms ) = splice @_, 0, 2;
+    my @targets = grep {defined} splice @_;
+    my $rv = 1;
+    my ( $glob, $tglob, @fstat );
+    my ( $ptrans, $target, $cperms, $addPerms, @tmp );
 
     # Validate arguments
     croak 'Mandatory first argument must be a hash reference'
         unless defined $errRef && ref $errRef eq 'HASH';
     croak 'Mandatory second argument must a defined permissions string'
         unless defined $perms;
-    croak 'Mandatory remaining arguments must have at least one target'
-        unless @targets;
-    foreach (@targets) {
-        croak 'Undefined or zero-length arguments passed as file arguments '
-            . 'to pchmod()'
-            unless defined $_ && length $_ > 0;
-    }
     %$errRef = ();
 
-    pdebug( "entering w/($errRef)($perms)(" . join( ', ', @targets ) . ')',
-        PDLEVEL1 );
+    pdebug(
+        "entering w/($errRef)($perms)("
+            . "(@{[ join ',', map { defined $_ ? $_ : 'undef' } @targets ]})",
+        PDLEVEL1
+        );
     pIn();
 
     # Convert perms if they're symbolic
@@ -959,40 +865,49 @@ sub pchmod ($$@) {
         $addPerms = $perms =~ /-/sm ? 0 : 1;
     }
 
-    # Expand file argument globs and check for mismatches
-    $rv = pglob( $errRef, \@expanded, @targets );
-    if ( scalar keys %$errRef ) {
-        Paranoid::ERROR = pdebug( 'invalid glob matches', PDLEVEL2 );
-        $rv = 0;
-    }
-    unless (@expanded) {
-        Paranoid::ERROR = pdebug( 'no files found to chmod', PDLEVEL2 );
-        $rv = 0;
+    # Add the contents of all the passed globs/strings
+    $glob = new Paranoid::Glob;
+    foreach (@targets) {
+
+        # Make sure we're dealing with globs
+        $tglob =
+            ref $_ eq 'Paranoid::Glob'
+            ? $_
+            : Paranoid::Glob->new( globs => [$_] );
+
+        unless ( defined $tglob ) {
+
+            # Error out
+            Paranoid::ERROR = pdebug( "failed to glob $_", PDLEVEL1 );
+            $rv = 0;
+            last;
+        }
+
+        # Add the contents of the temporary glob
+        push @$glob, @$tglob;
     }
 
     if ($rv) {
 
-        # Apply permissions to final list of targets
-        foreach $target (@expanded) {
-            pdebug( "processing target $target", PDLEVEL2 );
+        # Consolidate the entries
+        $glob->consolidate;
 
-            # Skip non-existent targets
-            unless ( -e $target ) {
-                pdebug( "target missing: $target", PDLEVEL2 );
-                $$errRef{$target} = 'file not found';
-                next;
-            }
-
-            # Detaint target
-            @tmp = ($target);
-            unless ( detaint( $target, 'filename', \$target ) ) {
-                pdebug( "failed to detaint target: $tmp[0]", PDLEVEL2 );
-                $$errRef{$target} = 'couldn\'t detaint filename ';
-                $rv = 0;
-                next;
-            }
+        # Iterate over entries
+        foreach (@$glob) {
+            pdebug( "processing $_", PDLEVEL2 );
 
             if ( defined $ptrans ) {
+
+                # Get the current file mode
+                @fstat = lstat $_;
+                unless (@fstat) {
+                    $rv = 0;
+                    $$errRef{$_} = $!;
+                    Paranoid::ERROR =
+                        pdebug( "failed to adjust permissions of $_: $!",
+                        PDLEVEL1 );
+                    next;
+                }
 
                 # If ptrans is defined we're going to do relative
                 # application of permissions
@@ -1001,25 +916,27 @@ sub pchmod ($$@) {
                     ? sprintf( 'adding perms %04o',   $ptrans )
                     : sprintf( 'removing perms %04o', $ptrans ),
                     PDLEVEL2
-                );
+                    );
 
                 # Get the current permissions
-                $cperms = ( stat $target )[2] & 07777;
+                $cperms = $fstat[2] & PERMMASK;
                 pdebug(
-                    sprintf(
-                        'current permissions of $target: %04o', $cperms
-                    ),
+                    sprintf( 'current permissions of %s: %04o', $_, $cperms ),
                     PDLEVEL2
-                );
+                    );
                 $cperms =
                     $addPerms
                     ? ( $cperms | $ptrans )
-                    : ( $cperms & ( 07777 ^ $ptrans ) );
-                pdebug(
-                    sprintf( 'new permissions of $target: %04o', $cperms ),
+                    : ( $cperms & ( PERMMASK ^ $ptrans ) );
+                pdebug( sprintf( 'new permissions of %s: %04o', $_, $cperms ),
                     PDLEVEL2 );
-                $rv = chmod $cperms, $target;
-                $$errRef{$target} = $! unless $rv;
+                unless ( chmod $cperms, $_ ) {
+                    $rv = 0;
+                    $$errRef{$_} = $!;
+                    Paranoid::ERROR =
+                        pdebug( "failed to adjust permissions of $_: $!",
+                        PDLEVEL1 );
+                }
 
             } else {
 
@@ -1029,14 +946,22 @@ sub pchmod ($$@) {
                 if ( detaint( $perms, 'number', \$perms ) ) {
 
                     # Detainted, now apply
-                    pdebug( sprintf( 'changing to perms %04o', $perms ),
-                        PDLEVEL2 );
-                    $rv = chmod $perms, $target;
-                    $$errRef{$target} = $! unless $rv;
+                    pdebug(
+                        sprintf(
+                            'assigning permissions of %04o to %s',
+                            $perms, $_
+                            ),
+                        PDLEVEL2
+                        );
+                    unless ( chmod $perms, $_ ) {
+                        $rv = 0;
+                        $$errRef{$_} = $!;
+                    }
                 } else {
 
                     # Detainting failed -- report
-                    Paranoid::ERROR = $$errRef{$target} =
+                    $$errRef{$_} = $!;
+                    Paranoid::ERROR =
                         pdebug( 'failed to detaint permissions mode',
                         PDLEVEL1 );
                     $rv = 0;
@@ -1045,12 +970,9 @@ sub pchmod ($$@) {
         }
 
         # Report the errors
-        if ( scalar keys %$errRef ) {
-            Paranoid::ERROR =
-                pdebug( 'errors occured while applying permissions',
-                PDLEVEL1 );
-            $rv = 0;
-        }
+        Paranoid::ERROR =
+            pdebug( 'errors occured while applying permissions', PDLEVEL1 )
+            unless $rv;
     }
 
     pOut();
@@ -1064,40 +986,48 @@ sub pchmodR ($$$@) {
     # Purpose:  Recursively calls pchmod
     # Returns:  True (1) if all targets were successfully chmod'd,
     #           False (0) if there are any errors
-    # Usage:    $rv = pchmodR(\%errors, $perms, "/foo");
+    # Usage:    $rv = pchmodR(0, \%errors, $perms, "/foo");
 
-    my $followLinks = shift;
-    my $errRef      = shift;
-    my $perms       = shift;
-    my @targets     = @_;
-    my $rv          = 1;
-    my @tmp;
+    my ( $follow, $errRef, $perms ) = splice @_, 0, 3;
+    my @targets = grep {defined} splice @_;
+    my $rv = 1;
+    my ( $glob, $tglob );
 
-    # Validate arguments
-    croak 'Mandatory second argument must be an array reference'
-        unless defined $errRef && ref $errRef eq 'HASH';
-    croak 'Mandatory third argument must be a defined permissions string'
-        unless defined $perms;
-    croak 'Mandatory remaining arguments must be a least one target'
-        unless @targets;
+    pdebug( 'entering', PDLEVEL1 );
+    pIn();
+
+    # Create a glob object for interal use
+    $glob = new Paranoid::Glob;
+
+    # Add the contents of all the passed globs/strings
     foreach (@targets) {
-        croak 'Undefined or zero-length arguments passed as file arguments '
-            . 'to pchmodR()'
-            unless defined $_ && length $_ > 0;
-    }
-    %$errRef = ();
 
-    # Make sure we've got some targets to start with
-    if ( pglob( $errRef, \@tmp, @targets ) ) {
-        unless (@tmp) {
-            Paranoid::ERROR = pdebug( 'no files to chmod', PDLEVEL1 );
+        # Make sure we're dealing with globs
+        $tglob =
+            ref $_ eq 'Paranoid::Glob'
+            ? $_
+            : Paranoid::Glob->new( globs => [$_] );
+
+        unless ( defined $tglob ) {
+
+            # Error out
             $rv = 0;
+            last;
         }
+
+        # Add the contents of the temporary glob
+        push @$glob, @$tglob;
     }
 
-    $rv =
-        _recurseWrapper( 'pchmodR', $followLinks, $errRef, $perms, @targets )
-        if $rv;
+    if ($rv) {
+
+        # Load the directory tree and execute prm
+        $rv =
+            $glob->recurse( $follow, 1 ) && pchmod( $errRef, $perms, $glob );
+    }
+
+    pOut();
+    pdebug( "leaving w/rv: $rv", PDLEVEL1 );
 
     return $rv;
 }
@@ -1109,12 +1039,10 @@ sub pchown ($$$@) {
     #           False (0) if there are any errors
     # Usage:    $rv = pchown(\%errors, $user, $group, "/foo");
 
-    my $errRef  = shift;
-    my $user    = shift;
-    my $group   = shift;
-    my @targets = @_;
-    my $rv      = 0;
-    my ( @expanded, @tmp, $target, $t );
+    my ( $errRef, $user, $group ) = splice @_, 0, 3;
+    my @targets = grep {defined} splice @_;
+    my $rv = 1;
+    my ( $glob, $tglob, @fstat );
 
     # Validate arguments
     croak 'Mandatory first argument must be a hash reference'
@@ -1122,68 +1050,70 @@ sub pchown ($$$@) {
     croak 'Mandatory second or third argument must be a defined user or '
         . 'group'
         unless defined $user || defined $group;
-    croak 'Mandatory remaining arguments must be at least one target'
-        unless @targets;
-    foreach (@targets) {
-        croak 'Undefined or zero-length arguments passed as file arguments '
-            . 'to pchown()'
-            unless defined $_ && length $_ > 0;
-    }
     %$errRef = ();
 
     $user  = -1 unless defined $user;
     $group = -1 unless defined $group;
 
     pdebug(
-        "entering w/($errRef)($user)($group)(" . join( ', ', @targets ) . ')',
+        "entering w/($errRef)($user)($group)("
+            . "(@{[ join ',', map { defined $_ ? $_ : 'undef' } @targets ]})",
         PDLEVEL1
-    );
+        );
     pIn();
 
-    # Translate to UID
-    $user = ptranslateUser($user) unless $user =~ /^-?\d+$/sm;
-
-    # Translate to GID
+    # Translate to UID/GID
+    $user  = ptranslateUser($user)   unless $user  =~ /^-?\d+$/sm;
     $group = ptranslateGroup($group) unless $group =~ /^-?\d+$/sm;
+    unless ( defined $user and defined $group ) {
+        $rv = 0;
+        Paranoid::ERROR =
+            pdebug( 'unsuccessful at translating uid/gid', PDLEVEL1 );
+    }
 
-    # Have we translated both successfully?
-    if ( defined $user && defined $group ) {
+    # Add the contents of all the passed globs/strings
+    $glob = new Paranoid::Glob;
+    foreach (@targets) {
+
+        # Make sure we're dealing with globs
+        $tglob =
+            ref $_ eq 'Paranoid::Glob'
+            ? $_
+            : Paranoid::Glob->new( globs => [$_] );
+
+        unless ( defined $tglob ) {
+
+            # Error out
+            Paranoid::ERROR = pdebug( "failed to glob $_", PDLEVEL1 );
+            $rv = 0;
+            last;
+        }
+
+        # Add the contents of the temporary glob
+        push @$glob, @$tglob;
+    }
+
+    if ($rv) {
 
         # Proceed
         pdebug( "UID: $user GID: $group", PDLEVEL2 );
 
-        # Expand file argument globs
-        $rv = pglob( $errRef, \@expanded, @targets );
-        if ( scalar keys %$errRef ) {
-            Paranoid::ERROR = pdebug( 'invalid glob matches', PDLEVEL2 );
-            $rv = 0;
-        }
+        # Consolidate the entries
+        $glob->consolidate;
 
         # Process the list
-        foreach $target (@expanded) {
-            $t = $target;
-            if ( detaint( $target, 'filename', \$target ) ) {
-                pdebug( "processing target $target", PDLEVEL2 );
-                $rv = chown $user, $group, $target;
-                $$errRef{$target} = $! unless $rv;
-            } else {
-                $$errRef{$t} = 'error detainting directory' unless $rv;
+        foreach (@$glob) {
+
+            pdebug( "processing $_", PDLEVEL2 );
+
+            unless ( chown $user, $group, $_ ) {
                 $rv = 0;
+                $$errRef{$_} = $!;
+                Paranoid::ERROR =
+                    pdebug( "failed to adjust ownership of $_: $!",
+                    PDLEVEL1 );
             }
         }
-
-        # Report the errors
-        if ( scalar keys %$errRef ) {
-            Paranoid::ERROR =
-                pdebug( 'errors occured while applying ownership', PDLEVEL1 );
-            $rv = 0;
-        }
-
-    } else {
-
-        # Failed to translate ids -- report
-        Paranoid::ERROR =
-            pdebug( 'unsuccessful at translating uid/gid', PDLEVEL1 );
     }
 
     pOut();
@@ -1197,43 +1127,48 @@ sub pchownR ($$$$@) {
     # Purpose:  Calls pchown recursively
     # Returns:  True (1) if all targets were successfully owned,
     #           False (0) if there are any errors
-    # Usage:    $rv = pchownR(\%errors, $user, $group, "/foo");
+    # Usage:    $rv = pchownR(0, \%errors, $user, $group, "/foo");
 
-    my $followLinks = shift;
-    my $errRef      = shift;
-    my $user        = shift;
-    my $group       = shift;
-    my $rv          = 1;
-    my @targets     = @_;
-    my @tmp;
+    my ( $follow, $errRef, $user, $group ) = splice @_, 0, 4;
+    my @targets = grep {defined} splice @_;
+    my $rv = 1;
+    my ( $glob, $tglob );
 
-    # Validate arguments
-    croak 'Mandatory second argument must be a hash reference'
-        unless defined $errRef && ref $errRef eq 'HASH';
-    croak 'Mandatory third or fourth argument must be a defined user or '
-        . 'group'
-        unless defined $user || defined $group;
-    croak 'Mandatory remaining arguments must be at least one target'
-        unless @targets;
+    pdebug( 'entering', PDLEVEL1 );
+    pIn();
+
+    # Create a glob object for interal use
+    $glob = new Paranoid::Glob;
+
+    # Add the contents of all the passed globs/strings
     foreach (@targets) {
-        croak 'Undefined or zero-length arguments passed as file arguments '
-            . 'to pchownR()'
-            unless defined $_ && length $_ > 0;
-    }
-    %$errRef = ();
 
-    # Make sure we've got some targets to start with
-    if ( pglob( $errRef, \@tmp, @targets ) ) {
-        unless (@tmp) {
-            Paranoid::ERROR = pdebug( 'no files to chmod', PDLEVEL1 );
+        # Make sure we're dealing with globs
+        $tglob =
+            ref $_ eq 'Paranoid::Glob'
+            ? $_
+            : Paranoid::Glob->new( globs => [$_] );
+
+        unless ( defined $tglob ) {
+
+            # Error out
             $rv = 0;
+            last;
         }
+
+        # Add the contents of the temporary glob
+        push @$glob, @$tglob;
     }
 
-    $rv =
-        _recurseWrapper( 'pchownR', $followLinks, $errRef, $user, $group,
-        @targets )
-        if $rv;
+    if ($rv) {
+
+        # Load the directory tree and execute prm
+        $rv = $glob->recurse( $follow, 1 )
+            && pchown( $errRef, $user, $group, $glob );
+    }
+
+    pOut();
+    pdebug( "leaving w/rv: $rv", PDLEVEL1 );
 
     return $rv;
 }
@@ -1248,13 +1183,9 @@ sub pwhich ($) {
     my $binary      = shift;
     my @directories = grep /^.+$/sm, split /:/sm, $ENV{PATH};
     my $match       = undef;
-    my $b;
+    my $b           = defined $binary ? $binary : 'undef';
 
-    # Validate args
-    croak 'Mandatory first argument must be a defined binary name'
-        unless defined $binary;
-
-    pdebug( "entering w/($binary)", PDLEVEL1 );
+    pdebug( "entering w/($b)", PDLEVEL1 );
     pIn();
 
     # Try to detaint filename
@@ -1293,7 +1224,7 @@ Paranoid::Filesystem - Filesystem Functions
 
 =head1 VERSION
 
-$Id: Filesystem.pm,v 0.16 2009/03/17 23:54:32 acorliss Exp $
+$Id: Filesystem.pm,v 0.18 2010/04/20 22:02:56 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -1309,7 +1240,6 @@ $Id: Filesystem.pm,v 0.16 2009/03/17 23:54:32 acorliss Exp $
   $rv = pglob("/usr/*", \@matches); # deprecated
   $rv = pglob(\%errors, \@matches, @globs);
 
-  Paranoid::Filesystem::MAXLINKS = 20;
   $noLinks = ptranslateLink("/etc/foo/bar.conf");
   $cleaned = pcleanPath($filename);
 
@@ -1334,21 +1264,14 @@ tracing into each function you must set B<PDEBUG> to at least 9.
 B<pcleanPath>, B<ptranslateLink>, and B<ptranslatePerms> are only exported 
 if this module is used with the B<:all> target.
 
-B<NOTE:> All of these functions detaint all filename, directory, and glob
-arguments using B<detaint> from B<Paranoid::Input>.  If you find the default 
-I<filename> or I<fileglob> regexes to be too strict (and they are certainly
-more strict than what filesystems actually support) you will have to redefine
-them using B<addTaintRegex>.
+B<NOTE:> Previous versions of this module used the rather restrictive filename
+regexes for detainting arguments.  This is now handled by the
+L<Paranoid::Glob> module, which detaints to pretty much everything a
+filesystem can handle.  Many of what used to be fatal errors are no longer so.
+Programmatic errors are still fatal, but errors which may be due to user input
+are safely errored out, allowing program execution to continue.
 
 =head1 SUBROUTINES/METHODS
-
-=head2 MAXLINKS
-
-  Paranoid::Filesystem::MAXLINKS = 20;
-
-This lvalue subroutine sets the maximum number of symlinks that will be 
-tolerated in a filename for translation purposes.  This prevents a runaway 
-process due to circular references between symlinks.
 
 =head2 pmkdir
 
@@ -1358,6 +1281,15 @@ This function simulates a 'mkdir -p {path}', returning false if it fails for
 any reason other than the directory already being present.  The second
 argument (permissions) is optional, but if present should be an octal number.
 Shell-style globs are supported as the path argument.
+
+If you need to make a directory that includes characters which would normally
+be interpreted as shell expansion characters you can offer a B<Paranoid::Glob>
+object as the path argument instead.  Creating such an object while passing it
+a I<literal> boolean true value will prevent any shell expansion from
+happening.
+
+This method also allows you to call B<pmkdir> with a list of directories to
+create, rather than just relying upon shell expansion to construct the list.
 
 =head2 prm
 
@@ -1371,7 +1303,7 @@ The error message from each failed operation will be placed into the passed
 hash ref using the filename as the key.
 
 B<NOTE>:  If you ask it to delete something that's not there it will silently
-succeed.
+succeed.  After all, not being there is what you wanted anyway, right?
 
 =head2 prmR
 
@@ -1441,8 +1373,8 @@ will check every element in the path and do a full translation to the final
 target.
 
 The final target is passed through pcleanPath beforehand to remove any
-unneeded path artifacts.  If an error occurs (like exceeding the B<MAXLINKS>
-threshold or the target being nonexistent) this function will return undef.
+unneeded path artifacts.  If an error occurs (like circular link references
+or the target being nonexistent) this function will return undef.
 You can retrieve the reason for failure from B<Paranoid::ERROR>.
 
 Obviously, testing for symlinks requires testing against the filesystem, so
@@ -1473,6 +1405,9 @@ calling incarnation).
 
 Two forms of the function call are supported, primarily for backward
 compatibility purposes.  The latter is the prefered incarnation.
+
+B<NOTE:> This function is now just a wrapper around L<Paranoid::Glob>.  It may
+be advantageous for you to use it directly in lieu of B<pglob>.
 
 =head2 ptouch
 
@@ -1594,11 +1529,19 @@ will return undef.
 
 =item o
 
+L<Carp>
+
+=item o
+
 L<Cwd>
 
 =item o
 
-L<File::Glob>
+L<Errno>
+
+=item o
+
+L<Fcntl>
 
 =item o
 
@@ -1612,6 +1555,10 @@ L<Paranoid::Debug>
 
 L<Paranoid::Input>
 
+=item o
+
+L<Paranoid::Glob>
+
 =back
 
 =head1 BUGS AND LIMITATIONS
@@ -1621,6 +1568,19 @@ better off using B<Cwd>'s B<realpath> function instead.  The only thing it can
 do differently is translating a single link itself, without translating any
 additional symlinks found in the preceding path.  But, again, you probably
 won't want that in most circumstances.
+
+All of the B<*R> recursive functions have the potential to be very expensive
+in terms of memory usage.  In an attempt to be fast (and reduce excessive 
+function calls and stack depth) it utilizes L<Paranoid::Glob>'s B<recurse> 
+method.  In essence, this means that the entire directory tree is loaded into 
+memory at once before any operations are performed.
+
+For the most part functions meant to simulate userland programs try to act
+just as those programs would in a shell environment.  That includes filtering
+arguments through shell globbing expansion, etc.  Should you have a filename
+that should be treated as a literal string you should put it into a
+L<Paranoid::Glob> object as a literal first, and then hand the glob to the
+functions.
 
 =head1 AUTHOR
 

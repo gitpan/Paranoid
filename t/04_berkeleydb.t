@@ -5,6 +5,7 @@ use Test::More tests => 34;
 use Paranoid;
 use Paranoid::Filesystem qw(prmR);
 use Paranoid::Module;
+use Paranoid::Debug;
 
 use strict;
 use warnings;
@@ -92,7 +93,8 @@ SKIP: {
     is( $rv, 0, 'iterator 2');
 
     # Cleanup
-    prmR( \%errors, "./t/db" );
+    $db = undef;
+    system 'rm -rf t/db';
 }
 
 

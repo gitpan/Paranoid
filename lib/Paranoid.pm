@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Paranoid.pm,v 0.23 2009/03/17 23:46:19 acorliss Exp $
+# $Id: Paranoid.pm,v 0.24 2010/04/15 23:20:43 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -24,7 +24,7 @@ use warnings;
 use vars qw($VERSION @EXPORT @EXPORT_OK %EXPORT_TAGS);
 use base qw(Exporter);
 
-($VERSION) = ( q$Revision: 0.23 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.24 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 @EXPORT      = qw(psecureEnv);
 @EXPORT_OK   = qw(psecureEnv);
@@ -64,11 +64,11 @@ sub psecureEnv (;$) {
     delete @ENV{qw(IFS CDPATH ENV BASH_ENV)};
     $ENV{PATH} = $path;
     if ( exists $ENV{TERM} ) {
-      if ( $ENV{TERM} =~ /^([\w\+\.\-]+)$/ ) {
-        $ENV{TERM} = $1;
-      } else {
-        $ENV{TERM} = 'vt100';
-      }
+        if ( $ENV{TERM} =~ /^([\w\+\.\-]+)$/sm ) {
+            $ENV{TERM} = $1;
+        } else {
+            $ENV{TERM} = 'vt100';
+        }
     }
 
     return 1;
@@ -98,7 +98,7 @@ Paranoid - Paranoia support for safer programs
 
 =head1 VERSION
 
-$Id: Paranoid.pm,v 0.23 2009/03/17 23:46:19 acorliss Exp $
+$Id: Paranoid.pm,v 0.24 2010/04/15 23:20:43 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -188,7 +188,11 @@ L<Paranoid::Debug>: Command-line debugging framework and functions
 
 =item o
 
-L<Paranoid::Filesystems>: Filesystem operation functions
+L<Paranoid::Filesystem>: Filesystem operation functions
+
+=item o
+
+L<Paranoid::Glob>: Paranoid Glob objects
 
 =item o
 

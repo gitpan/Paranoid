@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Email.pm,v 0.81 2009/03/05 00:09:34 acorliss Exp $
+# $Id: Email.pm,v 0.82 2010/04/15 23:23:28 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -25,7 +25,7 @@ use Carp;
 use Net::SMTP;
 use Net::Domain qw(hostfqdn);
 
-($VERSION) = ( q$Revision: 0.81 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.82 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 #####################################################################
 #
@@ -92,7 +92,7 @@ sub log ($$$$$$$$$;$$) {
         "entering w/($msgtime)($severity)($message)($name)"
             . "($facility)($level)($scope)($m)($r)($s1)($s2)",
         PDLEVEL1
-    );
+        );
     pIn();
 
     # We need a mailhost and recipient at a minimum
@@ -172,7 +172,7 @@ __EOF__
             'Message logged with e-mail facility, but we have '
                 . 'neither a mailhost or a recipient to send to -- ignoring',
             PDLEVEL1
-        );
+            );
         $rv = 0;
     }
 
@@ -201,7 +201,7 @@ Paranoid::Log::Email - Log Facility Email
 
 =head1 VERSION
 
-$Id: Email.pm,v 0.81 2009/03/05 00:09:34 acorliss Exp $
+$Id: Email.pm,v 0.82 2010/04/15 23:23:28 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -242,6 +242,14 @@ L<Paranoid::Debug>
 
 B<NOTE>:  Given that this module is not intended to be used directly nothing
 is exported.
+
+=head2 init
+
+=head2 log
+
+=head2 remove
+
+=head2 dump
 
 =head1 SEE ALSO
 

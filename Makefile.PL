@@ -26,6 +26,9 @@ WriteMakefile(
   AUTHOR          => 'Arthur Corliss <corliss@digitalmages.com>',
   VERSION_FROM    => 'lib/Paranoid.pm',
   PREREQ_PM       => {
+                     'Carp'             => 0,
+                     'Errno'            => 0,
+                     'Fcntl'            => 0,
                      'File::Glob'       => 0,
                      'Test::Pod'        => 0,
                      'Test::More'       => 0,

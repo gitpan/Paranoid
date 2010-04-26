@@ -1,5 +1,20 @@
 CHANGELOG
 
+v0.24 (2010/04/15)
+==================
+
+--Added Paranoid::Glob
+--Major cleanup to satisfy PerlCritic and PerlTidy
+--Fixed pmkdir to allow permissions that include sticky bits, etc.
+--Updated filesystem functions to use Paranoid::Glob instead of pglob
+--pglob is now just a wrapper around Paranoid::Glob as well
+--Removed excessive external locking in Paranoid::BerkeleyDB -- hopefully
+  internal CDB locking mechanism is robust enough
+--Made user input validation on Paranoid::Filesystem non-fatal (handing in
+  undefs as filenames, etc.)
+--Removed MAXLINKS in Paranoid::Filesystem
+
+
 v0.23  (2009/03/17)
 ===================
 --Fixed tests that weren't fully supported on all platforms
