@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Input.pm,v 0.16 2010/04/15 23:23:28 acorliss Exp $
+# $Id: Input.pm,v 0.19 2010/05/05 23:30:33 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -28,7 +28,7 @@ use Paranoid;
 use Paranoid::Debug qw(:all);
 use Carp;
 
-($VERSION) = ( q$Revision: 0.16 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.19 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 @EXPORT = qw(FSZLIMIT LNSZLIMIT slurp sip tail closeFile
     detaint stringMatch);
@@ -41,6 +41,12 @@ use Carp;
         ],
         );
 
+use constant STAT_INO  => 1;
+use constant STAT_SIZE => 7;
+use constant DEF_FSIZE => 16 * 1024;
+use constant DEF_LSIZE => 2 * 1024;
+use constant RV_LSZERR => -1;
+
 #####################################################################
 #
 # Module code follows
@@ -48,7 +54,7 @@ use Carp;
 #####################################################################
 
 {
-    my $fszlimit = 16 * 1024;
+    my $fszlimit = DEF_FSIZE;
 
     sub FSZLIMIT : lvalue {
 
@@ -60,7 +66,7 @@ use Carp;
         $fszlimit;
     }
 
-    my $lnszlimit = 2 * 1024;
+    my $lnszlimit = DEF_LSIZE;
 
     sub LNSZLIMIT : lvalue {
 
@@ -175,6 +181,7 @@ sub slurp ($$;$) {
 {
     my %fhandles;    # Hash of filenames => filedescriptors
     my %fpids;       # Hash of filenames => opening PIDs
+    my %fstat;       # Hash of filenames => [ stat info ]
     my %buffers;     # Hash of strings, keyed by filename
 
     sub closeFile {
@@ -193,10 +200,11 @@ sub slurp ($$;$) {
         pdebug( "entering w/($filename)", PDLEVEL1 );
         pIn();
 
-        if ( exists $fhandles{$filename} && $fpids{$filename} == $$ ) {
+        if ( exists $fhandles{$filename} ) {
             $rv = close $fhandles{$filename};
             delete $fhandles{$filename};
             delete $fpids{$filename};
+            delete $fstat{$filename};
             delete $buffers{$filename};
         }
 
@@ -208,17 +216,33 @@ sub slurp ($$;$) {
 
     sub _getHandle {
 
-        # Purpose:  Retrieves a filehandle to the requested file.  It also
-        #           tracks what process opened the filehandle so a new one is
-        #           opened after a fork call.  Passing the optional boolean
-        #           field as true will cause the file pointer to be sent to
-        #           the end of the file.
+        # Purpose:  This is a unified function that serves retrieval of file
+        #           handles for both sip & tail.  For both, it pays attention
+        #           to whether the file was opened before a fork, and if so,
+        #           closes the file handle in the child and reopens it, albeit
+        #           at the same position.
+        #
+        #           Invocation differs between sip & tail, however.  For sip
+        #           all it needs is the filename.  For tail it expects one or
+        #           two more arguments.  The first boolean argument tells the
+        #           function that it's being called in tail mode, and should
+        #           seek to the end of the file on file opens.  The second
+        #           argument is an optional offset to back up from the EOF on
+        #           new opens.
+        #
+        #           Finally, tail mode also keeps track of the file stat
+        #           information on each call.  It uses that to detect when
+        #           either the file is truncated or moved so that we can
+        #           reopen the filehandle and continue tailing.  This is
+        #           useful in situations such as in log rotation.
         # Returns:  Filehandle
         # Usage:    $fh = _getHandle($filename);
+        # Usage:    $fh = _getHandle($filename, 1, -25);
 
         my $filename = shift;
         my $seekEOF  = shift;
-        my ( $f, $fd, $rv );
+        my $offset   = shift || 0;
+        my ( $f, $fd, $rv, @fstat, $bpos, $buffer );
 
         # Is there a filehandle cached?
         if ( exists $fhandles{$filename} ) {
@@ -226,14 +250,73 @@ sub slurp ($$;$) {
             # Yes, so was it opened by us?
             if ( $fpids{$filename} == $$ ) {
 
-                # Yup, return the filehandle
-                $rv = $fhandles{$filename};
+                if ($seekEOF) {
+
+                    # In tail mode let's stat the file handle
+                    $fstat{$filename} = [ stat $fhandles{$filename} ];
+                    $bpos = tell $fhandles{$filename};
+
+                    if ( $bpos < $fstat{$filename}[STAT_SIZE] ) {
+
+                        # shortcut:  if the file size is greater than
+                        #            current position we know we still have
+                        #            content to read, so continue as normal
+                        $rv = $fhandles{$filename};
+
+                    } else {
+
+                        # See what's currently on the filesystem answering to
+                        # this filename
+                        @fstat = stat $filename;
+
+                        if ( @fstat == 0 ) {
+
+                            # OMG -- they killed Kenny!  You bastards!
+                            Paranoid::ERROR =
+                                pdebug( "$filename has been deleted",
+                                PDLEVEL3 );
+                            $rv = undef;
+
+                        } elsif (
+                            $fstat[STAT_INO] != $fstat{$filename}[STAT_INO]
+                            or
+                            ( $fstat[STAT_INO] == $fstat{$filename}[STAT_INO]
+                                and $bpos > $fstat{$filename}[STAT_SIZE] )
+                            ) {
+
+                            # The file was truncated, moved, or replaced.
+                            # Either way, we need to reopen the file
+                            # from the beginning
+                            pdebug(
+                                "$filename has been truncated, moved, "
+                                    . 'or replaced -- reopening',
+                                PDLEVEL3
+                                );
+                            closeFile($filename);
+                            $rv = _getHandle($filename);
+
+                        } else {
+
+                            # When all else fails, give them the filehandle on
+                            # file...
+                            $rv = $fhandles{$filename};
+                        }
+                    }
+                } else {
+
+                    # Sip mode
+                    $rv = $fhandles{$filename};
+                }
 
             } else {
 
-                # Nope, let's delete it and reopen it
-                delete $fhandles{$filename};
+                pdebug( "reopening $filename", PDLEVEL3 );
+                $bpos = tell $fhandles{$filename};
+                $buffer = $buffers{$filename} if exists $buffers{$filename};
+                closeFile($filename);
                 $rv = _getHandle($filename);
+                seek $rv, $bpos, SEEK_SET;
+                $buffers{$filename} = $buffer if defined $buffer;
             }
 
         } else {
@@ -242,13 +325,22 @@ sub slurp ($$;$) {
             if ( detaint( $filename, 'filename', \$f ) ) {
 
                 # Try to open the file
+                pdebug( "opening $filename", PDLEVEL3 );
                 if ( sysopen $fd, $f, O_RDONLY ) {
 
                     # Done, now cache and return the filehandle
                     $fhandles{$f} = $fd;
                     $fpids{$f}    = $$;
+                    $fstat{$f}    = [ stat $f ];
                     $buffers{$f}  = '';
                     $rv           = $fd;
+
+                    # If seekEOF is set, let's go to the end minus the offset
+                    if ($seekEOF) {
+                        pdebug( "moving to EOF offset $offset", PDLEVEL3 );
+                        seek $fd, $offset, SEEK_END;
+                        seek $fd, 0, SEEK_CUR;
+                    }
 
                 } else {
 
@@ -339,7 +431,7 @@ sub slurp ($$;$) {
                             );
                         $buffers{$filename} = substr $buffers{$filename}, 0,
                             LNSZLIMIT +1;
-                        $rv = -1;
+                        $rv = RV_LSZERR;
                     }
                 } else {
 
@@ -354,7 +446,7 @@ sub slurp ($$;$) {
                         pdebug( 'removing line exceeding ' . LNSZLIMIT,
                             PDLEVEL2 );
                         splice @$aref, $i, 1;
-                        $rv = -1;
+                        $rv = RV_LSZERR;
                     } else {
                         $i++;
                     }
@@ -384,7 +476,7 @@ sub slurp ($$;$) {
         my $aref      = shift;
         my $offset    = shift || 0;
         my $autoChomp = shift || 0;
-        my $rv        = 0;
+        my $rv        = 1;
         my ( $fd, $bpos, $ofszlimit );
 
         croak 'Mandatory first argument must be a defined filename'
@@ -397,20 +489,11 @@ sub slurp ($$;$) {
         pIn();
 
         # Get the file descriptor
-        $fd = _getHandle($filename);
+        $offset *= LNSZLIMIT +1;
+        $fd = _getHandle( $filename, 1, $offset );
         if ( defined $fd ) {
 
-            # Find out our current byte position
-            $bpos = tell $fd;
-
-            # If we're on byte 0 we will assume that this is the first time
-            # tail has been called on this file, and that this call is the one
-            # that opened the file.  In which case we'll seek to the EOF -
-            # offset before calling sip
-            unless ($bpos) {
-                $offset *= LNSZLIMIT +1;
-                pdebug( "moving to EOF $offset", PDLEVEL2 );
-                seek $fd, $offset, SEEK_END;
+            if ($offset) {
 
                 # We also need to temporarily change FSZLIMIT so we can get
                 # all of our back input in one fell swoop
@@ -419,17 +502,19 @@ sub slurp ($$;$) {
             }
 
             # Now, call sip
-            $rv = sip( $filename, $aref, $autoChomp );
+            sip( $filename, $aref, $autoChomp );
 
             # Restore FSZLIMIT if this was the initial call, and prune excess
             # lines found
-            unless ($bpos) {
+            if ($offset) {
                 FSZLIMIT = $ofszlimit;
                 $offset = abs $offset / LNSZLIMIT +1;
                 if ( $offset < @$aref ) {
                     splice @$aref, 0, @$aref - $offset;
                 }
             }
+        } else {
+            $rv = 0;
         }
 
         pOut();
@@ -595,7 +680,7 @@ Paranoid::Input - Paranoid input functions
 
 =head1 VERSION
 
-$Id: Input.pm,v 0.16 2010/04/15 23:23:28 acorliss Exp $
+$Id: Input.pm,v 0.19 2010/05/05 23:30:33 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -622,6 +707,19 @@ $Id: Input.pm,v 0.16 2010/04/15 23:23:28 acorliss Exp $
 
 The modules provide safer routines to use for input activities such as reading
 files and detainting user input.
+
+The B<sip> and B<tail> functions keep open file handles.  Even so, it's
+specifically built to be safe for use in B<fork> scenarios.  You can being a
+tail or sip in a parent, fork children, and all process can independently
+continue sipping with no confusion between processes.  This is possible
+because we check to see if the PID matches the PID in effect with the file was
+opened.  If not, we reopen the file and seek to the same position so we can
+pick up where we left off.
+
+The B<slurp> function isn't affected by this since it reads entire files in a
+single call, no filehandles are kept open between calls.
+
+All file-reading functions use and obey B<flock>.
 
 B<addTaintRegex> is only exported if this module is used with the B<:all> target.
 
@@ -679,6 +777,8 @@ the remainder from the next sip.
 When sip comes up to then end of the file it does not close the file, you're
 required to close it explicitly with B<closeFile>.  This is done intentionally
 to allow the process to continue to effectively B<tail> a growing file.
+Unlike the B<tail> function provided here, though, it does perform any
+additional checks to see if the file you're reading was truncated or replaced.
 
 An optional third argument tells sip whether or not to chomp all the read
 lines before returning.
@@ -698,6 +798,10 @@ memory to be allocated to store B<LNSZLIMIT> * that number.
 This function returns true if the file is successfully open, regardless of
 whether any new input was there to be read.  It only returns false if there 
 was a problem opening or reading the file.
+
+Tail should be called with the third argument for the first tail of a file.
+Continuing to use it for subsequent calls will cause the number of lines
+returned to be truncated to fit within that limit.
 
 Like B<sip>, one must explicitly close a file with B<closeFile>.
 

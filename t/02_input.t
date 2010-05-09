@@ -93,7 +93,7 @@ is( sip( $f, \@lines, 1 ), 1, 'sip 10' );
 push @all, @lines;
 is( sip( $f, \@lines, 1 ), 0, 'sip 11' );
 push @all, @lines;
-is( tail( $f, \@lines, -10 ), 0, 'tail 1' );
+ok( tail( $f, \@lines, -10 ), 'tail 1' );
 ok( closeFile($f), 'closeFile 1' );
 isnt( tail( $f, \@lines, -10 ), 0, 'tail 2' );
 ok( closeFile($f), 'closeFile 2' );
@@ -101,7 +101,7 @@ ok( closeFile($f), 'closeFile 2' );
 open $fh, '>', $f or die "failed to open file: $!\n";
 close $fh;
 
-is( tail( $f, \@lines, -10 ), 0, 'tail 3' );
+ok( tail( $f, \@lines, -10 ), 'tail 3' );
 ok( closeFile($f), 'closeFile 3' );
 
 open $fh, '>', $f or die "failed to open file: $!\n";

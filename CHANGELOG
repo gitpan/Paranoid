@@ -1,5 +1,15 @@
 CHANGELOG
 
+v0.25 (2010/05/05)
+==================
+--Fixed tail's behavior to be consistent with documentation
+--Fixed tail/sip to preserve file position and buffers when 
+  reopening the file in children
+--Fixed tail functionality to handle deleted, truncated, moved, or replaced
+  files
+--Expanded tail/sip documentation
+--Added daemonize function to Paranoid::Process
+
 v0.24 (2010/04/15)
 ==================
 

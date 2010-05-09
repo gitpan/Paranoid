@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Process.pm,v 0.95 2010/04/15 23:23:28 acorliss Exp $
+# $Id: Process.pm,v 0.99 2010/05/06 07:42:50 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -25,24 +25,26 @@ use vars qw($VERSION @EXPORT @EXPORT_OK %EXPORT_TAGS);
 use base qw(Exporter);
 use Paranoid;
 use Paranoid::Debug qw(:all);
-use POSIX qw(getuid setuid setgid WNOHANG);
+use POSIX qw(getuid setuid setgid WNOHANG setsid);
 use Carp;
 
-($VERSION) = ( q$Revision: 0.95 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.99 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
-@EXPORT    = qw(switchUser);
+@EXPORT    = qw(switchUser daemonize);
 @EXPORT_OK = qw(MAXCHILDREN      childrenCount   installChldHandler
     sigchld          pfork           ptranslateUser
-    ptranslateGroup  switchUser      pcapture);
+    ptranslateGroup  switchUser      pcapture
+    daemonize);
 %EXPORT_TAGS = (
     all => [
         qw(MAXCHILDREN      childrenCount   installChldHandler
             sigchld          pfork           ptranslateUser
-            ptranslateGroup  switchUser      pcapture)
+            ptranslateGroup  switchUser      pcapture
+            daemonize)
         ],
     pfork => [
         qw(MAXCHILDREN      childrenCount   installChldHandler
-            sigchld          pfork)
+            sigchld          pfork           daemonize)
         ],
         );
 
@@ -115,6 +117,46 @@ sub sigchld () {
     $SIG{CHLD} = $osref;
 
     return 1;
+}
+
+sub daemonize () {
+
+    # Purpose:  Daemonizes process and disassociates with the terminal
+    # Returns:  True unless there are errors.
+    # Usage:    daemonize();
+
+    my ( $rv, $pid );
+
+    pdebug( 'entering', PDLEVEL1 );
+    pIn();
+
+    $pid = fork;
+
+    # Exit if we're the parent process
+    exit 0 if $pid;
+
+    if ( defined $pid ) {
+
+        # Fork was successful, close parent file descriptors
+        close STDIN;
+        close STDOUT;
+        close STDERR;
+
+        # Create a new process group
+        setsid();
+
+        $rv = 1;
+
+    } else {
+        Paranoid::ERROR =
+            pdebug( "Failed to daemonize process: $!", PDLEVEL1 );
+        $rv = 0;
+    }
+
+    pOut();
+    pdebug( "leaving w/rv: $rv", PDLEVEL1 );
+
+    return $rv;
 }
 
 sub pfork () {
@@ -366,11 +408,13 @@ Paranoid::Process - Process Management Functions
 
 =head1 VERSION
 
-$Id: Process.pm,v 0.95 2010/04/15 23:23:28 acorliss Exp $
+$Id: Process.pm,v 0.99 2010/05/06 07:42:50 acorliss Exp $
 
 =head1 SYNOPSIS
 
   use Paranoid::Process;
+
+  $rv = daemonize();
 
   MAXCHILDREN = 100;
 
@@ -393,7 +437,8 @@ processes.  The following export targets are provided:
   all               All functions within this module
   pfork             All child management functions
 
-Only the function B<switchUser> is currently exported by default.
+Only the functions B<switchUser> and B<daemonize> are currently exported by 
+default.
 
 =head1 SUBROUTINES/METHODS
 
@@ -425,6 +470,14 @@ child's PID and exit value as arguments.
 This function decrements the child counter necessary for pfork's operation, as
 well as calling the user's signal handler with each child's PID and exit
 value.
+
+=head2 daemonize
+
+    $rv = daemonize();
+
+This function forks a child who closes all STD* filehandles and starts a new
+process group.  The parent exits cleanly.  If the fork fails for any reason it
+returns a false value.
 
 =head2 pfork
 
