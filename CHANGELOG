@@ -1,5 +1,12 @@
 CHANGELOG
 
+v0.26 (2010/05/08)
+==================
+--Changed daemonize's behavior:  reopening STD* on /dev/null and chdir'ing
+  to /.  Hindsight's 20/20, eh?
+--Made backup/restore of SIGCHLD in pcapture dependent upon an actual
+  sighandler being installed
+
 v0.25 (2010/05/05)
 ==================
 --Fixed tail's behavior to be consistent with documentation

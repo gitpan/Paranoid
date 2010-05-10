@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Process.pm,v 0.99 2010/05/06 07:42:50 acorliss Exp $
+# $Id: Process.pm,v 0.101 2010/05/10 04:43:30 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -28,7 +28,7 @@ use Paranoid::Debug qw(:all);
 use POSIX qw(getuid setuid setgid WNOHANG setsid);
 use Carp;
 
-($VERSION) = ( q$Revision: 0.99 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.101 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 @EXPORT    = qw(switchUser daemonize);
 @EXPORT_OK = qw(MAXCHILDREN      childrenCount   installChldHandler
@@ -138,14 +138,15 @@ sub daemonize () {
     if ( defined $pid ) {
 
         # Fork was successful, close parent file descriptors
-        close STDIN;
-        close STDOUT;
-        close STDERR;
+        $rv = open(STDIN, '/dev/null') and open(STDOUT, '>/dev/null');
 
         # Create a new process group
-        setsid();
-
-        $rv = 1;
+        unless ($rv) {
+            setsid();
+            $rv = open STDERR, '>&STDOUT';
+            die "Can't dup stdout: $!" unless $rv;
+            chdir '/';
+        }
 
     } else {
         Paranoid::ERROR =
@@ -355,8 +356,10 @@ sub pcapture ($$$) {
     $cmd = "( $cmd ) 2>&1";
 
     # Backup SIGCHLD handler and set it to something safe
-    $sigchld = $SIG{CHLD};
-    $SIG{CHLD} = sub {1};
+    if ( defined $SIG{CHLD} ) {
+        $sigchld = $SIG{CHLD};
+        $SIG{CHLD} = sub {1};
+    }
 
     # Execute and snarf the output
     pdebug( 'executing command', PDLEVEL2 );
@@ -367,7 +370,7 @@ sub pcapture ($$$) {
     pdebug( "command exited with raw rv: $$cref", PDLEVEL2 );
 
     # Restore SIGCHLD handler
-    $SIG{CHLD} = $sigchld;
+    $SIG{CHLD} = $sigchld if defined $SIG{CHLD};
 
     # Check the return value
     if ( $$cref == -1 or $$cref == 32512 ) {
@@ -408,7 +411,7 @@ Paranoid::Process - Process Management Functions
 
 =head1 VERSION
 
-$Id: Process.pm,v 0.99 2010/05/06 07:42:50 acorliss Exp $
+$Id: Process.pm,v 0.101 2010/05/10 04:43:30 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -475,9 +478,10 @@ value.
 
     $rv = daemonize();
 
-This function forks a child who closes all STD* filehandles and starts a new
-process group.  The parent exits cleanly.  If the fork fails for any reason it
-returns a false value.
+This function forks a child who reopens all STD* filehandles on /dev/null and 
+starts a new process group.  The parent exits cleanly.  If the fork fails for
+any reason it returns a false value.  The child will also change its directory
+to B</>.
 
 =head2 pfork
 

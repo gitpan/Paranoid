@@ -30,8 +30,7 @@ WriteMakefile(
                      'Errno'            => 0,
                      'Fcntl'            => 0,
                      'File::Glob'       => 0,
-                     'Test::Pod'        => 0,
-                     'Test::More'       => 0,
+                     'POSIX'            => 0,
                      },
   ($ExtUtils::MakeMaker::VERSION ge '6.30_00' ? (
     LICENSE => 'perl',) : ()),
