@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Syslog.pm,v 0.82 2010/04/15 23:23:28 acorliss Exp $
+# $Id: Syslog.pm,v 0.83 2010/06/03 19:04:07 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -26,7 +26,7 @@ use Paranoid::Debug qw(:all);
 use Unix::Syslog qw(:macros :subs);
 use Carp;
 
-($VERSION) = ( q$Revision: 0.82 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.83 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 #####################################################################
 #
@@ -105,16 +105,19 @@ sub _transLevel ($) {
 
     my $l     = lc shift;
     my %trans = (
-        debug   => LOG_DEBUG,
-        info    => LOG_INFO,
-        notice  => LOG_NOTICE,
-        warn    => LOG_WARNING,
-        warning => LOG_WARNING,
-        err     => LOG_ERR,
-        crit    => LOG_CRIT,
-        alert   => LOG_ALERT,
-        emerg   => LOG_EMERG,
-        error   => LOG_ERR,
+        'debug'     => LOG_DEBUG,
+        'info'      => LOG_INFO,
+        'notice'    => LOG_NOTICE,
+        'warn'      => LOG_WARNING,
+        'warning'   => LOG_WARNING,
+        'err'       => LOG_ERR,
+        'error'     => LOG_ERR,
+        'crit'      => LOG_CRIT,
+        'critical'  => LOG_CRIT,
+        'alert'     => LOG_ALERT,
+        'emerg'     => LOG_EMERG,
+        'emergency' => LOG_EMERG,
+        'panic'     => LOG_EMERG,
         );
 
     return exists $trans{$l} ? $trans{$l} : undef;
@@ -253,7 +256,7 @@ Paranoid::Log::Syslog - Log Facility Syslog
 
 =head1 VERSION
 
-$Id: Syslog.pm,v 0.82 2010/04/15 23:23:28 acorliss Exp $
+$Id: Syslog.pm,v 0.83 2010/06/03 19:04:07 acorliss Exp $
 
 =head1 SYNOPSIS
 

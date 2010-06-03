@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Filesystem.pm,v 0.18 2010/04/20 22:02:56 acorliss Exp $
+# $Id: Filesystem.pm,v 0.19 2010/06/03 19:01:11 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -33,7 +33,7 @@ use Paranoid::Process qw(ptranslateUser ptranslateGroup);
 use Paranoid::Input;
 use Paranoid::Glob;
 
-($VERSION) = ( q$Revision: 0.18 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.19 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 @EXPORT = qw(
     preadDir     psubdirs    pfiles    pglob
@@ -899,7 +899,7 @@ sub pchmod ($$@) {
             if ( defined $ptrans ) {
 
                 # Get the current file mode
-                @fstat = lstat $_;
+                @fstat = stat $_;
                 unless (@fstat) {
                     $rv = 0;
                     $$errRef{$_} = $!;
@@ -1224,7 +1224,7 @@ Paranoid::Filesystem - Filesystem Functions
 
 =head1 VERSION
 
-$Id: Filesystem.pm,v 0.18 2010/04/20 22:02:56 acorliss Exp $
+$Id: Filesystem.pm,v 0.19 2010/06/03 19:01:11 acorliss Exp $
 
 =head1 SYNOPSIS
 

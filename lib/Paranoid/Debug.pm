@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Debug.pm,v 0.92 2010/04/15 23:23:28 acorliss Exp $
+# $Id: Debug.pm,v 0.93 2010/06/03 18:58:30 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -23,22 +23,24 @@ use vars qw($VERSION @EXPORT @EXPORT_OK %EXPORT_TAGS);
 use base qw(Exporter);
 use Paranoid;
 
+($VERSION) = ( q$Revision: 0.93 $ =~ /(\d+(?:\.(\d+))+)/sm );
+
+@EXPORT    = qw(PDEBUG pdebug perror pIn pOut psetDebug PDPREFIX);
+@EXPORT_OK = qw(PDEBUG pdebug perror pIn pOut psetDebug PDPREFIX
+    PDLEVEL1 PDLEVEL2 PDLEVEL3 PDLEVEL4 PDMAXINDENT);
+%EXPORT_TAGS = (
+    all => [
+        qw(PDEBUG pdebug perror pIn pOut psetDebug PDPREFIX
+            PDLEVEL1 PDLEVEL2 PDLEVEL3 PDLEVEL4 PDMAXINDENT)
+        ],
+        );
+
 use constant PDLEVEL1 => 9;
 use constant PDLEVEL2 => 10;
 use constant PDLEVEL3 => 11;
 use constant PDLEVEL4 => 12;
 
-($VERSION) = ( q$Revision: 0.92 $ =~ /(\d+(?:\.(\d+))+)/sm );
-
-@EXPORT    = qw(PDEBUG pdebug perror pIn pOut psetDebug PDPREFIX);
-@EXPORT_OK = qw(PDEBUG pdebug perror pIn pOut psetDebug PDPREFIX
-    PDLEVEL1 PDLEVEL2 PDLEVEL3 PDLEVEL4);
-%EXPORT_TAGS = (
-    all => [
-        qw(PDEBUG pdebug perror pIn pOut psetDebug PDPREFIX
-            PDLEVEL1 PDLEVEL2 PDLEVEL3 PDLEVEL4)
-        ],
-        );
+use constant PDMAXIND => 60;
 
 #####################################################################
 #
@@ -47,20 +49,23 @@ use constant PDLEVEL4 => 12;
 #####################################################################
 
 {
-    my $ilevel = 0;    # Start with no identation
-    my $pdebug = 0;    # Start with debug output disabled
+    my $dlevel     = 0;           # Start with no debug level
+    my $ilevel     = 0;           # Start with no identation
+    my $pdebug     = 0;           # Start with debug output disabled
+    my $maxLevel   = PDMAXIND;    # Start with normal max indentation
+    my $indIgnored = 0;           # Start without ignoring indentation
 
     my $defprefix = sub {
 
         # Default Prefix to use with debug messages looks like:
         #
-        #   [PID - ILEVEL] Subroutine:
+        #   [PID - $dlevel] Subroutine:
         #
         my $caller = ( caller 2 )[3];
         my $prefix;
 
         $caller = defined $caller ? $caller : 'undef';
-        $prefix = ' ' x $ilevel . "[$$-$ilevel] $caller: ";
+        $prefix = ' ' x $ilevel . "[$$-$dlevel] $caller: ";
 
         return $prefix;
     };
@@ -70,73 +75,82 @@ use constant PDLEVEL4 => 12;
         $pdebug;
     }
 
-    sub ILEVEL : lvalue {
-        $ilevel;
-    }
-
     sub PDPREFIX : lvalue {
         $pdprefix;
     }
-}
 
-sub perror ($) {
+    sub PDMAXINDENT : lvalue {
+        $maxLevel;
+    }
 
-    # Purpose:  Print passed string to STDERR
-    # Returns:  Return value from print function
-    # Usage:    $rv = perror("Foo!");
+    sub perror ($) {
 
-    my $msg = shift;
+        # Purpose:  Print passed string to STDERR
+        # Returns:  Return value from print function
+        # Usage:    $rv = perror("Foo!");
 
-    $@ = $msg;
+        my $msg = shift;
 
-    return print STDERR "$msg\n";
-}
+        $@ = $msg;
 
-sub pdebug ($;$) {
+        return print STDERR "$msg\n";
+    }
 
-    # Purpose:  Calls perror() if the message level is less than or equal to
-    #           the value of PDBEBUG, after prepending the string returned by
-    #           the PDPREFIX routine, if defined
-    # Returns:  Always returns the passed message, regardless of PDEBUG's
-    #           value
-    # Usage:    pdebug($message, $level);
+    sub pdebug ($;$) {
 
-    my $msg    = shift;
-    my $level  = shift || 1;
-    my $prefix = PDPREFIX;
+        # Purpose:  Calls perror() if the message level is less than or equal
+        #           to the value of PDBEBUG, after prepending the string
+        #           returned by the PDPREFIX routine, if defined
+        # Returns:  Always returns the passed message, regardless of PDEBUG's
+        #           value
+        # Usage:    pdebug($message, $level);
 
-    return $msg if $level > PDEBUG;
+        my $msg    = shift;
+        my $level  = shift || 1;
+        my $prefix = PDPREFIX;
 
-    # Execute the code block, if that's what it is
-    $prefix = &$prefix() if ref($prefix) eq 'CODE';
+        return $msg if $level > PDEBUG;
 
-    perror("$prefix$msg");
+        # Execute the code block, if that's what it is
+        $prefix = &$prefix() if ref($prefix) eq 'CODE';
 
-    return $msg;
-}
+        perror("$prefix$msg");
 
-sub pIn () {
+        return $msg;
+    }
 
-    # Purpose:  Increases indentation level
-    # Returns:  Always True (1)
-    # Usage:    pIn();
+    sub pIn () {
 
-    my $i = ILEVEL;
-    ILEVEL = ++$i;
+        # Purpose:  Increases indentation level
+        # Returns:  Always True (1)
+        # Usage:    pIn();
 
-    return 1;
-}
+        if ( $ilevel < PDMAXINDENT ) {
+            $ilevel++;
+        } else {
+            $indIgnored = 1;
+        }
+        $dlevel++;
 
-sub pOut () {
+        return 1;
+    }
 
-    # Purpose:  Decreases indentation level
-    # Returns:  Always True (1)
-    # Usage:    pOut();
+    sub pOut () {
 
-    my $i = ILEVEL;
-    ILEVEL = --$i if $i >= 0;
+        # Purpose:  Decreases indentation level
+        # Returns:  Always True (1)
+        # Usage:    pOut();
 
-    return 1;
+        if ($indIgnored) {
+            $indIgnored = 0;
+        } else {
+            $ilevel-- if $ilevel > 0;
+        }
+        $dlevel--;
+
+        return 1;
+    }
+
 }
 
 # TODO:  Kill this freaking thing (psetDebug)
@@ -170,14 +184,15 @@ Paranoid::Debug - Trace message support for paranoid programs
 
 =head1 VERSION
 
-$Id: Debug.pm,v 0.92 2010/04/15 23:23:28 acorliss Exp $
+$Id: Debug.pm,v 0.93 2010/06/03 18:58:30 acorliss Exp $
 
 =head1 SYNOPSIS
 
   use Paranoid::Debug;
 
-  PDEBUG = 1;
-  PDPREFIX = sub { scalar localtime };
+  PDEBUG        = 1;
+  PDMAXINDENT   = 40;
+  PDPREFIX      = sub { scalar localtime };
   pdebug("starting program", 1);
   foo();
 
@@ -193,6 +208,7 @@ $Id: Debug.pm,v 0.92 2010/04/15 23:23:28 acorliss Exp $
 
   perror("error msg");
 
+  # Deprecated
   psetDebug(@ARGV);
 
 =head1 DESCRIPTION
@@ -223,13 +239,21 @@ B<PDEBUG> is an lvalue subroutine which is initially set to 0, but can be
 set to any positive integer.  The higher the number the higher the level 
 of pdebug statements are printed.
 
+=head2 PDMAXINDENT
+
+B<PDMAXINDENT> is an lvalue subroutine which is initially set to 60, but can 
+be set to any integer.  This controls the max indentation of the debug 
+messages.  Obviously, it wouldn't help to indent a debug message by a hundred 
+columns on an eighty column terminal just because your stack depth gets that 
+deep.
+
 =head2 PDPREFIX
 
 B<PDPREFIX> is also an lvalue subroutien and is set by default to a 
 subroutine that returns as a string the standard prefix for debug 
 messages:
 
-  [PID - ILEVEL] Subroutine:
+  [PID - DLEVEL] Subroutine:
 
 Assigning another subroutine reference to a subroutine can override this 
 behavior.

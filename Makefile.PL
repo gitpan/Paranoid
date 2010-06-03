@@ -19,6 +19,19 @@ dependencies are resolved.
 
 __EOF__
 
+my %optMods;
+
+# Populate %optMods with minimal versions
+if ( eval 'require Unix::Syslog; 1;' ) {
+  $optMods{'Unix::Syslog'} = 1.1;
+}
+if ( eval 'require Net::SMTP; 1;' ) {
+  $optMods{'Net::SMTP'} = 0;
+}
+if ( eval 'require BerkeleyDB; 1;' ) {
+  $optMods{'BerkeleyDB'} = 0.32;
+}
+
 # Create the makefile
 WriteMakefile(
   NAME            => 'Paranoid',
@@ -31,6 +44,7 @@ WriteMakefile(
                      'Fcntl'            => 0,
                      'File::Glob'       => 0,
                      'POSIX'            => 0,
+                     %optMods
                      },
   ($ExtUtils::MakeMaker::VERSION ge '6.30_00' ? (
     LICENSE => 'perl',) : ()),

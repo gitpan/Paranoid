@@ -1,5 +1,15 @@
 CHANGELOG
 
+v0.27 (2010/06/03)
+==================
+--Added the ability to restrict level of indentation for pdebug messages in
+  Paranoid::Debug
+--Fixed pchmod so that relative permissions applied to a symlink doesn't use 
+  the symlink's permissions to apply, but rather the target
+--Rewrote Paranoid::Log's internals
+--Added '!' as a supported scope for logging facilities
+--Added more severity level aliases
+
 v0.26 (2010/05/08)
 ==================
 --Changed daemonize's behavior:  reopening STD* on /dev/null and chdir'ing
