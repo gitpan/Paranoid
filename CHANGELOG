@@ -1,5 +1,13 @@
 CHANGELOG
 
+v0.28 (2011/04/12)
+==================
+--Updated ipInNetwork in Paranoid::Network to support IPv6 networks &
+  addresses
+--Added new function extractIPs to Paranoid::Network which can extract IPv4/
+  IPv6 addresses from arbitrary text
+--Minor tweaks to some regexes in Paranoid::Input
+
 v0.27 (2010/06/03)
 ==================
 --Added the ability to restrict level of indentation for pdebug messages in

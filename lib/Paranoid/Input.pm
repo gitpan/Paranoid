@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Input.pm,v 0.19 2010/05/05 23:30:33 acorliss Exp $
+# $Id: Input.pm,v 0.20 2011/04/13 22:01:43 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -28,7 +28,7 @@ use Paranoid;
 use Paranoid::Debug qw(:all);
 use Carp;
 
-($VERSION) = ( q$Revision: 0.19 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.20 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 @EXPORT = qw(FSZLIMIT LNSZLIMIT slurp sip tail closeFile
     detaint stringMatch);
@@ -535,7 +535,7 @@ sub slurp ($$;$) {
         filename => qr#[/ \w\-\.:,@\+]+\[?#sm,
         fileglob => qr#[/ \w\-\.:,@\+\*\?\{\}\[\]]+\[?#sm,
         hostname => qr/(?:[a-zA-Z0-9][a-zA-Z0-9\-]*\.)*[a-zA-Z0-9]+/sm,
-        ipaddr   => qr/(?:\d+\.){3}\d+/sm,
+        ipaddr   => qr/(?:\d{1,3}\.){3}\d{1,3}/sm,
         netaddr  => qr#^(?:\d+\.){3}\d+(?:/(?:\d+|(?:\d+\.){3}\d+))?$#sm,
         login    => qr/[a-zA-Z][\w\.\-]*/sm,
         nometa   => qr/[^\%\`\$\!\@]+/sm,
@@ -680,7 +680,7 @@ Paranoid::Input - Paranoid input functions
 
 =head1 VERSION
 
-$Id: Input.pm,v 0.19 2010/05/05 23:30:33 acorliss Exp $
+$Id: Input.pm,v 0.20 2011/04/13 22:01:43 acorliss Exp $
 
 =head1 SYNOPSIS
 
