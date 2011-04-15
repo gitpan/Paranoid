@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Network.pm,v 0.63 2011/04/13 22:02:44 acorliss Exp $
+# $Id: Network.pm,v 0.64 2011/04/15 22:05:13 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -28,14 +28,11 @@ use Paranoid::Module;
 use Socket;
 use Carp;
 
-($VERSION) = ( q$Revision: 0.63 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.64 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 @EXPORT      = qw(ipInNetwork hostInDomain extractIPs);
 @EXPORT_OK   = qw(ipInNetwork hostInDomain extractIPs);
 %EXPORT_TAGS = ( all => [qw(ipInNetwork hostInDomain extractIPs)], );
-
-my $ip4sub = \&Socket::inet_aton;
-my $ip6sub = undef;
 
 use constant CHUNK       => 32;
 use constant IPV6CHUNKS  => 4;
@@ -67,26 +64,29 @@ sub ipInNetwork ($@) {
     my $rv       = 0;
     my $oip      = $ip;
     my ( $bip, $bnet, $bmask, $family, @tmp, $irv );
+    my ( $inet_pton, $af_inet6 );
 
     # Validate arguments
     if ( defined $ip ) {
 
         # Test for an IPv4 address
-        if ( $ip =~ m#^(?:\d+\.){3}\d+$#sm and defined &$ip4sub($ip) ) {
-            $family = AF_INET;
+        if ( $ip =~ m/^@{[ IP4REGEX ]}$/smo and defined inet_aton($ip) ) {
+            $family = AF_INET();
         } else {
 
             # If Socket6 is present we'll check for an IPv6 address
             if ( loadModule('Socket6') ) {
-                $ip6sub = \&Socket6::inet_pton;
-                if ( defined &$ip6sub( AF_INET6, $ip ) ) {
+
+                $inet_pton = \&Socket6::inet_pton;
+                $af_inet6  = \&Socket6::AF_INET6;
+                if ( defined &$inet_pton( &$af_inet6(), $ip ) ) {
 
                     # Convert IPv6-encoded IPv4 addresses to pure IPv4
-                    if ( $ip =~ m#^::ffff:((?:\d+\.){3}\d+)$#smi ) {
+                    if ( $ip =~ m/^::ffff:(@{[ IP4REGEX ]})$/smio ) {
                         $ip     = $1;
-                        $family = AF_INET;
+                        $family = AF_INET();
                     } else {
-                        $family = AF_INET6;
+                        $family = &$af_inet6();
                     }
                 } else {
                     croak 'Mandatory first argument must be a '
@@ -106,11 +106,12 @@ sub ipInNetwork ($@) {
     # Filter out non-IP data from @networks
     @networks = grep {
         if ( defined $_
-            && m#^([\d\.]+|[abcdef\d:]+)(?:/(?:\d+|(?:\d+\.){3}\d+))?$#smi )
+            && m#^([\d\.]+|[abcdef\d:]+)(?:/(?:\d+|@{[ IP4REGEX ]}))?$#smio )
         {
             defined(
-                  $family == AF_INET ? &$ip4sub($1)
-                : &$ip6sub( AF_INET6, $1 ) );
+                $family == AF_INET()
+                ? inet_aton($1)
+                : &$inet_pton( &$af_inet6(), $1 ) );
         }
     } @networks;
 
@@ -122,34 +123,36 @@ sub ipInNetwork ($@) {
 
         # Convert IP to binary
         $bip =
-            $family == AF_INET
-            ? [ unpack 'N', &$ip4sub($ip) ]
-            : [ unpack 'NNNN', &$ip6sub( AF_INET6, $ip ) ];
+            $family == AF_INET()
+            ? [ unpack 'N', inet_aton($ip) ]
+            : [ unpack 'NNNN', &$inet_pton( &$af_inet6(), $ip ) ];
 
         # Compare against all networks
         foreach (@networks) {
 
-            ( $bnet, $bmask ) = (m#^([^/]+)(?:/(.+))?$#sm);
+            if ( $_ =~ m#^([^/]+)(?:/(.+))?$#sm ) {
+                ( $bnet, $bmask ) = ( $1, $2 );
+            }
 
             # See if it's a network address
             if ( defined $bmask and length $bmask ) {
 
                 # Get the netmask
-                if ( $family == AF_INET ) {
+                if ( $family == AF_INET() ) {
 
                     # Convert IPv4/CIDR notation to a binary number
                     $bmask =
-                          ( $bmask =~ m#^\d+$#sm and $bmask <= MAXIPV4CIDR )
+                          ( $bmask =~ m/^\d+$/sm and $bmask <= MAXIPV4CIDR )
                         ? [ MASK - ( ( 2**( CHUNK - $bmask ) ) - 1 ) ]
-                        : ( $bmask =~ m#^(?:\d+\.){3}\d+$#sm
-                            and defined &$ip4sub($ip) )
-                        ? [ unpack 'N', &$ip4sub($bmask) ]
+                        : ( $bmask =~ m/^@{[ IP4REGEX ]}$/smo
+                            and defined inet_aton($ip) )
+                        ? [ unpack 'N', inet_aton($bmask) ]
                         : undef;
 
                 } else {
 
                     # Convert IPv6 CIDR notation to a binary number
-                    if ( $bmask =~ m#^\d+$#sm and $bmask <= MAXIPV6CIDR ) {
+                    if ( $bmask =~ m/^\d+$/sm and $bmask <= MAXIPV6CIDR ) {
 
                         # Add the mask in 32-bit chunks
                         @tmp = ();
@@ -182,9 +185,9 @@ sub ipInNetwork ($@) {
 
                 # Convert network address to binary
                 $bnet =
-                    $family == AF_INET
-                    ? [ unpack 'N', &$ip4sub($bnet) ]
-                    : [ unpack 'NNNN', &$ip6sub( AF_INET6, $bnet ) ];
+                    $family == AF_INET()
+                    ? [ unpack 'N', inet_aton($bnet) ]
+                    : [ unpack 'NNNN', &$inet_pton( &$af_inet6(), $bnet ) ];
 
                 # Start comparing our chunks
                 $irv = 1;
@@ -209,9 +212,9 @@ sub ipInNetwork ($@) {
 
                 # Not a network address, so let's see if it's an exact match
                 $bnet =
-                    $family == AF_INET
-                    ? [ unpack 'N', &$ip4sub($_) ]
-                    : [ unpack 'NNNN', &$ip6sub( AF_INET6, $_ ) ];
+                    $family == AF_INET()
+                    ? [ unpack 'N', inet_aton($_) ]
+                    : [ unpack 'NNNN', &$inet_pton( &$af_inet6(), $_ ) ];
 
                 # Do the comparison
                 $irv = 1;
@@ -291,7 +294,7 @@ sub extractIPs (@) {
     foreach $string (@strings) {
 
         # Look for IPv4 addresses
-        @ips = ( $string =~ /(@{[ IP4REGEX ]})/smg );
+        @ips = ( $string =~ /(@{[ IP4REGEX ]})/smog );
 
         # Validate them by filtering through inet_aton
         foreach $ip (@ips) {
@@ -300,20 +303,22 @@ sub extractIPs (@) {
 
         # If we have Socket6 installed we'll look for IPv6 addresses
         if ( loadModule('Socket6') ) {
-            @ips = ( $string =~ m/(@{[ IP6REGEX ]})/smgix );
+            @ips = ( $string =~ m/(@{[ IP6REGEX ]})/smogix );
 
             # Filter out addresses with more than one ::
-            @ips = grep { scalar(m#(::)#smg) <= 1 } @ips;
+            @ips = grep { scalar(m/(::)/smg) <= 1 } @ips;
 
             # Validate remaining addresses with inet_pton
             foreach $ip (@ips) {
-                push @rv, $ip if defined &Socket6::inet_pton( AF_INET6, $ip );
+                push @rv, $ip
+                    if
+                    defined &Socket6::inet_pton( &Socket6::AF_INET6(), $ip );
             }
         }
     }
 
     # Filter out IPv4 encoded as IPv6
-    @rv = grep ! /^::ffff:(?:(?:\d+\.){3}\d+)$/, @rv;
+    @rv = grep !/^::ffff:@{[ IP4REGEX ]}$/smo, @rv;
 
     pOut();
     pdebug( "leaving w/rv: @rv)", PDLEVEL1 );
@@ -331,7 +336,7 @@ Paranoid::Network - Network functions for paranoid programs
 
 =head1 VERSION
 
-$Id: Network.pm,v 0.63 2011/04/13 22:02:44 acorliss Exp $
+$Id: Network.pm,v 0.64 2011/04/15 22:05:13 acorliss Exp $
 
 =head1 SYNOPSIS
 
