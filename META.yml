@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               Paranoid
-version:            0.29
+version:            0.30
 abstract:           General function library for safer, more secure programming
 author:
     - Arthur Corliss <corliss@digitalmages.com>
@@ -8,13 +8,12 @@ license:            perl
 distribution_type:  module
 configure_requires:
     ExtUtils::MakeMaker:  0
-requires:           
-    Carp:                0
-    Errno:               0
-    Fcntl:               0
-    File::Glob:          0
-    POSIX:               0
-
+requires:
+    Carp:        0
+    Errno:       0
+    Fcntl:       0
+    File::Glob:  0
+    POSIX:       0
 no_index:
     directory:
         - t
@@ -23,8 +22,8 @@ generated_by:       ExtUtils::MakeMaker version 6.46
 meta-spec:
     url:      http://module-build.sourceforge.net/META-spec-v1.4.html
     version:  1.4
-recommends:         
-    Unix::Syslog:        1.1
-    Net::SMTP:           0
-    BerkeleyDB:          0.32
-    Socket6:             0.23
+recommends:
+    BerkeleyDB:    0.32
+    Net::SMTP:     0
+    Socket6:       0.23
+    Unix::Syslog:  1.1

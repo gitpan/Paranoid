@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Lockfile.pm,v 0.62 2009/03/17 23:54:56 acorliss Exp $
+# $Id: Lockfile.pm,v 0.63 2011/08/18 06:54:32 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -29,11 +29,13 @@ use Paranoid::Debug qw(:all);
 use Paranoid::Filesystem;
 use Carp;
 
-($VERSION) = ( q$Revision: 0.62 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.63 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 @EXPORT      = qw(plock punlock pcloseLockfile);
 @EXPORT_OK   = qw(plock punlock pcloseLockfile);
 %EXPORT_TAGS = ( all => [qw(plock punlock pcloseLockfile)], );
+
+use constant PRIV_UMASK => 0600;
 
 #####################################################################
 #
@@ -83,7 +85,7 @@ use Carp;
         my $targ     = defined $type ? $type : 'undef';
         my $marg     = defined $mode ? $mode : 'undef';
         my $rv       = 0;
-        my $fd;
+        my ( $fd, $irv );
 
         # Validate arguments
         croak 'Mandatory first argument must be a defined filename'
@@ -95,36 +97,39 @@ use Carp;
         pdebug( "entering w/($filename)($targ)($marg)", PDLEVEL1 );
         pIn();
 
-        # Get the filehandle if it's already open
+        # Get the filehandle
         if ( exists $fd{$filename} ) {
+
+            # Retrieve a previously stored filehandle
             $fd = $fd{$filename};
 
-            # Open a new filehandle
         } else {
 
+            # Open a new filehandle
+            #
             # Set the default perms if needed
-            $mode = 0600 unless defined $mode;
+            $mode = PRIV_UMASK unless defined $mode;
 
-           # To avoid race conditions with multiple files opening (and
-           # overwriting) the same file, and hence doing flocks on descriptors
-           # with a different # (f#*&ing lock isn't working!) we attempt to do
-           # an exclusive open first.  If that fails, then we do reopen to get
-           # a filehandle to the (possibly) newly created file.
-            sysopen( $fd, $filename, O_RDWR | O_CREAT | O_EXCL, $mode )
+            # To avoid race conditions with multiple files opening (and
+            # overwriting) the same file, and hence doing flocks on
+            # descriptors with a different # (f#*&ing lock isn't working!)
+            # we attempt to do an exclusive open first.  If that fails, then
+            # we do reopen to get a filehandle to the (possibly) newly
+            # created file.
+            $irv = sysopen( $fd, $filename, O_RDWR | O_CREAT | O_EXCL, $mode )
                 || sysopen( $fd, $filename, O_RDWR );
 
             # Store the new filehandle
-            $fd{$filename} = $fd if defined $fd;
+            $fd{$filename} = $fd if $irv;
         }
 
         # Flock it
-        if ( defined $fd ) {
+        if ($irv) {
 
             # Assign the lock type according to $type
             $type = 'write' unless defined $type;
             $type = $type eq 'write' ? LOCK_EX : LOCK_SH;
-            $rv = 1;
-            flock $fd, $type;
+            $rv = flock $fd, $type;
         }
 
         pOut();
@@ -174,8 +179,8 @@ use Carp;
         pIn();
 
         if ( exists $fd{$filename} ) {
-            flock $fd{$filename}, LOCK_UN;
-            $rv = close $fd{$filename};
+            $rv = flock( $fd{$filename}, LOCK_UN )
+                and close $fd{$filename};
             delete $fd{$filename} if $rv;
         }
 
@@ -200,7 +205,7 @@ Paranoid::Lockfile - Paranoid Lockfile support
 
 =head1 VERSION
 
-$Id: Lockfile.pm,v 0.62 2009/03/17 23:54:56 acorliss Exp $
+$Id: Lockfile.pm,v 0.63 2011/08/18 06:54:32 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -235,6 +240,8 @@ exclusive write mode.
 
 You can pass an optional third argument which would be the lockfile
 filesystem permissions if the file is created.  The default is 0600.
+
+B<NOTE:> This function will block until the advisory lock is granted.
 
 =head2 punlock
 

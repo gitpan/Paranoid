@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: BerkeleyDB.pm,v 0.83 2010/04/15 23:15:38 acorliss Exp $
+# $Id: BerkeleyDB.pm,v 0.84 2011/08/18 06:55:27 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -22,12 +22,15 @@ use warnings;
 use vars qw($VERSION);
 use Paranoid;
 use Paranoid::Debug qw(:all);
-use Paranoid::Lockfile;
 use Paranoid::Filesystem qw(pmkdir);
 use BerkeleyDB;
 use Carp;
+use Fcntl qw(:flock O_RDWR O_CREAT O_EXCL);
 
-($VERSION) = ( q$Revision: 0.83 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.84 $ =~ /(\d+(?:\.(\d+))+)/sm );
+
+use constant DEF_MODE => 0700;
+use constant BDB_ERR  => -1;
 
 #####################################################################
 #
@@ -50,10 +53,13 @@ sub new (@) {
         DbName => undef,
         Dbs    => {},
         DbEnv  => undef,
+        DbLock => undef,
+        DbMode => undef,
         );
     my $dbdir = defined $args{DbDir}  ? $args{DbDir}  : 'undef';
     my $dbnm  = defined $args{DbName} ? $args{DbName} : 'undef';
-    my ( $self, $tmp );
+    my $mode  = defined $args{DbMode} ? $args{DbMode} : DEF_MODE;
+    my ( $self, $tmp, $lfh, $rv );
 
     pdebug( "entering w/DbDir => \"$dbdir\", DbName => \"$dbnm\"", PDLEVEL1 );
     pIn();
@@ -62,16 +68,26 @@ sub new (@) {
     if ( defined $dbdir and defined $dbnm ) {
 
         # Create the directory (and let umask determine the permissions)
-        if ( pmkdir($dbdir) ) {
+        if ( pmkdir( $dbdir, $mode ) ) {
 
             # Create lock file and lock it while doing initialization.  I
             # know, this isn't ideal when creating temporary objects that
             # need only read access, but it's the only way to avoid race
             # conditions if this is the process that creates the database.
-            plock( "$dbdir/db.lock", 'write', 0666 );
+            if ( sysopen $lfh, "$dbdir/db.lock", O_RDWR | O_CREAT | O_EXCL,
+                $mode ) {
+                $rv = flock $lfh, LOCK_EX;
+            } elsif ( sysopen $lfh, "$dbdir/db.lock", O_RDWR, $mode ) {
+                $rv = flock $lfh, LOCK_SH;
+            }
+            unless ($rv) {
+                pOut();
+                pdebug( 'leaving w/rv: undef', PDLEVEL1 );
+            }
 
             # Create and bless the object reference
-            @init{qw(DbDir DbName)} = ( $dbdir, $dbnm );
+            @init{qw(DbDir DbName DbLock DbMode)} =
+                ( $dbdir, $dbnm, $lfh, $mode );
             $self = \%init;
             bless $self, $class;
 
@@ -85,6 +101,7 @@ sub new (@) {
                         '-ErrFile' => \*STDERR,
                         '-Flags' => DB_CREATE | DB_INIT_CDB | DB_INIT_MPOOL |
                             DB_CDB_ALLDB,
+                        '-Mode' => $mode,
                         ) )
                 ) {
 
@@ -94,6 +111,7 @@ sub new (@) {
                     '-Filename' => $dbnm,
                     '-Env'      => $self->{DbEnv},
                     '-Flags'    => DB_CREATE,
+                    '-Mode'     => $mode,
                     );
 
                 # Check if creating the db was successful
@@ -121,7 +139,7 @@ sub new (@) {
             }
 
             # Unlock the database
-            punlock("$dbdir/db.lock");
+            flock $lfh, LOCK_UN;
 
         } else {
 
@@ -149,6 +167,7 @@ sub addDb ($$) {
     my $dbnm  = shift;
     my $dbdir = $self->{DbDir};
     my $n     = defined $dbnm ? $dbnm : 'undef';
+    my $mode  = $self->{DbMode};
     my $rv    = 0;
     my $db;
 
@@ -159,16 +178,17 @@ sub addDb ($$) {
     if ( defined $dbnm and not exists ${ $self->{Dbs} }{$dbnm} ) {
 
         # Get exclusive lock
-        plock("$dbdir/db.lock");
+        flock $$self{DbLock}, LOCK_EX;
 
         $db = BerkeleyDB::Hash->new(
             '-Filename' => $dbnm,
             '-Env'      => $self->{DbEnv},
             '-Flags'    => DB_CREATE,
+            '-Mode'     => $mode,
             );
 
         # Release lock
-        punlock("$dbdir/db.lock");
+        flock $$self{DbLock}, LOCK_UN;
 
         # Store & report the result
         $rv = defined $db ? 1 : 0;
@@ -215,17 +235,9 @@ sub getVal ($$;$) {
     # Check the existence of the database
     if ( exists $$dref{$db} ) {
 
-        # Requested database exists
-        #
-        # Lock database for read mode
-        #plock( "$dbdir/db.lock", 'shared' );
-
         unless ( $$dref{$db}->db_get( $key, $val ) == 0 ) {
             pdebug( "no such key exists ($key)", PDLEVEL2 );
         }
-
-        # Unlock database
-        #punlock("$dbdir/db.lock");
 
     } else {
 
@@ -279,9 +291,6 @@ sub setVal ($$;$$) {
         # Make sure key is defined
         if ( defined $key and defined( $lock = $$dref{$db}->cds_lock ) ) {
 
-            # Lock database for write mode
-            #plock("$dbdir/db.lock");
-
             # Check whether setting a new record or deleting one
             if ( defined $val ) {
 
@@ -299,8 +308,6 @@ sub setVal ($$;$$) {
             # Unlock database
             $$dref{$db}->db_sync;
             $lock->cds_unlock;
-
-            #punlock("$dbdir/db.lock");
 
         } else {
 
@@ -353,9 +360,6 @@ sub getKeys ($;$$) {
     # Make sure database exists
     if ( exists $$dref{$db} ) {
 
-        # Lock database for read mode
-        #plock( "$dbdir/db.lock", 'shared' );
-
         # Retrieve all the keys
         $key = $val = '';
         $cursor =
@@ -366,8 +370,6 @@ sub getKeys ($;$$) {
 
             if ( defined $key ) {
 
-                #plock( "$dbdir/db.lock", 'write' );
-
                 # The method was passed a subroutine reference, so
                 # unlock the database and call the routine
                 &$subRef( $self, $key, $val ) if defined $subRef;
@@ -376,13 +378,9 @@ sub getKeys ($;$$) {
                 push @keys, $key;
             }
 
-            #plock( "$dbdir/db.lock", 'shared' );
         }
         $cursor->c_close;
         undef $cursor;
-
-        # Unlock database
-        #punlock("$dbdir/db.lock");
 
     } else {
 
@@ -426,7 +424,7 @@ sub purgeDb ($;$) {
     if ( exists $$dref{$db} ) {
 
         # Lock database for write mode
-        plock("$dbdir/db.lock");
+        flock $$self{DbLock}, LOCK_EX;
         $lock = $$dref{$db}->cds_lock;
 
         # Purge the database
@@ -435,14 +433,15 @@ sub purgeDb ($;$) {
         # Unlock database
         $$dref{$db}->db_sync;
         $lock->cds_unlock;
-        punlock("$dbdir/db.lock");
+        flock $$self{DbLock}, LOCK_UN;
+
+    } else {
 
         # Report invalid database
-    } else {
         Paranoid::ERROR =
             pdebug( "attempted to purge a nonexistent database ($db)",
             PDLEVEL1 );
-        $rv = -1;
+        $rv = BDB_ERR;
     }
 
     pOut();
@@ -476,7 +475,7 @@ sub DESTROY {
     pIn();
 
     # Sync & Close all dbs
-    plock("$dbdir/db.lock");
+    flock $$self{DbLock}, LOCK_EX;
     foreach ( keys %$dref ) {
         if ( defined $$dref{$_} ) {
             pdebug( "sync/close $_", PDLEVEL2 );
@@ -486,8 +485,7 @@ sub DESTROY {
     }
 
     # Release the locks
-    punlock("$dbdir/db.lock");
-    pcloseLockfile("$dbdir/db.lock");
+    flock $$self{DbLock}, LOCK_UN;
 
     pOut();
     pdebug( 'leaving', PDLEVEL1 );
@@ -505,13 +503,14 @@ Paranoid::BerkeleyDB -- BerkeleyDB concurrent-access Object
 
 =head1 VERSION
 
-$Id: BerkeleyDB.pm,v 0.83 2010/04/15 23:15:38 acorliss Exp $
+$Id: BerkeleyDB.pm,v 0.84 2011/08/18 06:55:27 acorliss Exp $
 
 =head1 SYNOPSIS
 
   use Paranoid::BerkeleyDB;
 
-  $db = Paranoid::BerkeleyDB->new(DbDir => '/tmp', DbName => 'foo.db');
+  $db = Paranoid::BerkeleyDB->new(DbDir => '/tmp', DbName => 'foo.db', 
+                                  DbMode => 0770);
   $rv = $db->addDb($dbname);
 
   $val = $db->getVal($key);
@@ -567,6 +566,9 @@ This class method is the object instantiator.  Two arguments are required:
 B<DbDir> which is the path to the directory where the database files will be 
 stored, and B<DbName> which is the filename of the database itself.  If 
 B<DbDir> doesn't exist it will be created for you automatically.
+
+B<DbMode> is optional, and if omitted defaults to 0700.  This affects the
+database directory, files, and lockfile.
 
 This method will create a BerkeleyDB Environment and will support 
 multiprocess transactions.

@@ -19,7 +19,8 @@ $rv = loadModule("Paranoid::BerkeleyDB");
 SKIP: {
     skip( 'BerkeleyDB module not found', 34 ) unless $rv;
 
-    $db = Paranoid::BerkeleyDB->new( DbDir => './t/db', DbName => 'test.db' );
+    $db = Paranoid::BerkeleyDB->new( DbDir => './t/db', DbName => 'test.db',
+                                     DbMode => 0777 );
     isnt( $db, undef, 'got db handle' );
     isa_ok( $db, 'Paranoid::BerkeleyDB' );
     ok( $db->addDb("test2.db"), 'added test2.db' );

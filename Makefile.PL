@@ -36,39 +36,15 @@ my %reqMods = (
     'File::Glob'       => 0,
     'POSIX'            => 0,
     );
+my %optMods = (
+  'Unix::Syslog'    => 1.1,
+  'Net::SMTP'       => 0,
+  'BerkeleyDB'      => 0.32,
+  'Socket6'         => 0.23,
+  );
 
-my $required = << "__EOF__";
-
-    Carp:                $reqMods{'Carp'}
-    Errno:               $reqMods{'Errno'}
-    Fcntl:               $reqMods{'Fcntl'}
-    File::Glob:          $reqMods{'File::Glob'}
-    POSIX:               $reqMods{'POSIX'}
-__EOF__
-
-my %optMods;
-
-# Populate %optMods with minimal versions
-if ( eval 'require Unix::Syslog; 1;' ) {
-  $optMods{'Unix::Syslog'} = 1.1;
-}
-if ( eval 'require Net::SMTP; 1;' ) {
-  $optMods{'Net::SMTP'} = 0;
-}
-if ( eval 'require BerkeleyDB; 1;' ) {
-  $optMods{'BerkeleyDB'} = 0.32;
-}
-if ( eval 'require Socket; require Socket6; 1;' ) {
-  $optMods{'Socket6'} = 0.23;
-}
-
-my $recommended = << "__EOF__";
-
-    Unix::Syslog:        $optMods{'Unix::Syslog'}
-    Net::SMTP:           $optMods{'Net::SMTP'}
-    BerkeleyDB:          $optMods{'BerkeleyDB'}
-    Socket6:             $optMods{'Socket6'}
-__EOF__
+chomp $recommended;
+chomp $required;
 
 # Create the makefile
 WriteMakefile(
@@ -76,11 +52,11 @@ WriteMakefile(
   ABSTRACT        => 'General function library for safer, more secure programming',
   AUTHOR          => 'Arthur Corliss <corliss@digitalmages.com>',
   VERSION_FROM    => 'lib/Paranoid.pm',
-  PREREQ_PM       => { %reqMods, %optMods },
+  PREREQ_PM       => { %reqMods },
   ($ExtUtils::MakeMaker::VERSION ge '6.30_00' ? (
     LICENSE => 'perl',
-    META_ADD => { 'recommends' => $recommended ,
-                  'requires'   => $required }) : ()),
+    META_ADD => { 'recommends' => { %optMods } ,
+                  'requires'   => { %reqMods } }) : ()),
   );
 
 exit 0;

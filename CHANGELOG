@@ -1,5 +1,13 @@
 CHANGELOG
 
+v0.30 (2011/08/17)
+==================
+--Added file permissions support to BerkekelyDB module
+--Moved flocking of lockfile to the BerkelelyDB internals
+--plock, etc., now returns exit value of flock routine in Lockfile
+--Fixed optional prereqs in generated META.yml file
+--Added CREDITS file (with recognition for Slaven Rezic (srezic@cpan.org))
+
 v0.29 (2011/04/15)
 ==================
 --Perl-5.6 compatibility fix:  Socket in 5.6 doesn't export AF/PF_INET6, 

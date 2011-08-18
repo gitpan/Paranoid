@@ -8,9 +8,12 @@ mode.  Over time I'll add more of my safety hacks to these modules.
 available:
 
     Paranoid
+    Paranoid::Args
     Paranoid::BerkeleyDB
+    Paranoid::Data
     Paranoid::Debug
     Paranoid::Filesystem
+    Paranoid::Glob
     Paranoid::Input
     Paranoid::Lockfile
     Paranoid::Log

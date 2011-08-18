@@ -4,6 +4,7 @@ README
 INSTALL
 MANIFEST
 LICENSE
+CREDITS
 lib/Paranoid.pm
 lib/Paranoid/Args.pm
 lib/Paranoid/BerkeleyDB.pm
