@@ -24,7 +24,8 @@ The following modules have optional dependencies:
   Paranoid::Network                Socket6
 
 You only need this installed if you wish to work with IPv6 networks in
-addition to IPv4.
+addition to IPv4.  If you're running Perl 5.14 or higher you don't need it
+at all, since they support IPv6 from that version.
 
 __EOF__
 
@@ -42,9 +43,6 @@ my %optMods = (
   'BerkeleyDB'      => 0.32,
   'Socket6'         => 0.23,
   );
-
-chomp $recommended;
-chomp $required;
 
 # Create the makefile
 WriteMakefile(

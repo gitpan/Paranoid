@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: BerkeleyDB.pm,v 0.84 2011/08/18 06:55:27 acorliss Exp $
+# $Id: BerkeleyDB.pm,v 0.85 2011/12/08 07:30:26 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -23,11 +23,11 @@ use vars qw($VERSION);
 use Paranoid;
 use Paranoid::Debug qw(:all);
 use Paranoid::Filesystem qw(pmkdir);
+use Paranoid::Lockfile;
 use BerkeleyDB;
 use Carp;
-use Fcntl qw(:flock O_RDWR O_CREAT O_EXCL);
 
-($VERSION) = ( q$Revision: 0.84 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.85 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 use constant DEF_MODE => 0700;
 use constant BDB_ERR  => -1;
@@ -37,6 +37,296 @@ use constant BDB_ERR  => -1;
 # BerkeleyDB code follows
 #
 #####################################################################
+
+sub _openEnv ($) {
+
+    # Purpose:  Opens a shared environment
+    # Returns:  True/False
+    # Usage:    $self->_openEnv;
+
+    my $self = shift;
+    my $rv   = 0;
+
+    pdebug( 'entering', PDLEVEL2 );
+    pIn();
+
+    if ( defined $$self{DbEnv} ) {
+
+        # Environment is already defined
+        pdebug( 'environment already created', PDLEVEL3 );
+        $rv = 1;
+
+    } else {
+
+        # suppress BerlekelDB warnings on older version
+        no strict 'subs';
+
+        # use lockfile to avoid race conditions
+        plock( "$$self{DbDir}/plock", 'write', $$self{DbMode} );
+
+        pdebug( "creating environment in $$self{DbDir}", PDLEVEL3 );
+        $$self{DbEnv} = BerkeleyDB::Env->new(
+            '-Home'  => $$self{DbDir},
+            '-Flags' => DB_CREATE | DB_INIT_CDB | DB_INIT_MPOOL |
+                DB_CDB_ALLDB,
+            '-Mode' => $$self{DbMode},
+            );
+        $rv = defined $$self{DbEnv};
+        pdebug( "failed to open environment: $BerkeleyDB::Error", PDLEVEL1 )
+            unless $rv;
+
+        # release the lock
+        punlock("$$self{DbDir}/plock");
+    }
+
+    pOut();
+    pdebug( "leaving w/rv: $rv", PDLEVEL2 );
+
+    return $rv;
+}
+
+sub _openDb ($$) {
+
+    # Purpose:  Opens a database
+    # Returns:  True/False
+    # Usage:    $self->_openDb('foo.db');
+
+    my $self = shift;
+    my $dbNm = shift;
+    my $rv   = 0;
+    my $dbh;
+
+    pdebug( "entering w/($dbNm)", PDLEVEL2 );
+    pIn();
+
+    if ( !defined $$self{DbEnv} ) {
+
+        # No environment available
+        pdebug( 'environment not available', PDLEVEL3 );
+        $rv = 0;
+
+    } else {
+
+        # suppress BerlekelDB warnings on older version
+        no strict 'subs';
+
+        # use lockfile to avoid race conditions
+        plock( "$$self{DbDir}/plock", 'write', $$self{DbMode} );
+
+        pdebug( "creating database $dbNm in $$self{DbDir}", PDLEVEL3 );
+        $dbh = BerkeleyDB::Hash->new(
+            '-Filename' => $dbNm,
+            '-Env'      => $$self{DbEnv},
+            '-Flags'    => DB_CREATE,
+            '-Mode'     => $$self{DbMode},
+            );
+        $rv = defined $dbh;
+        if ($rv) {
+            $$self{Dbs}{$dbNm} = $dbh;
+        } else {
+            pdebug( "failed to open database: $BerkeleyDB::Error", PDLEVEL1 );
+        }
+
+        # release the lock
+        punlock("$$self{DbDir}/plock");
+    }
+
+    pOut();
+    pdebug( "leaving w/rv: $rv", PDLEVEL2 );
+
+    return $rv;
+}
+
+sub _closeDb ($$) {
+
+    # Purpose:  Closes a database
+    # Returns:  True/False
+    # Usage:    $self->_closeDb('foo.db');
+
+    my $self = shift;
+    my $dbNm = shift;
+    my $rv   = 1;
+
+    pdebug( "entering w/($dbNm)", PDLEVEL2 );
+    pIn();
+
+    if ( exists $$self{Dbs}{$dbNm} and defined $$self{Dbs}{$dbNm}) {
+
+        # use lockfile to avoid race conditions
+        plock( "$$self{DbDir}/plock", 'write', $$self{DbMode} );
+
+        # Close the database
+        if ( $$self{Dbs}{$dbNm}->db_close ) {
+            delete $$self{Dbs}{$dbNm};
+            $rv = 1;
+        } else {
+            pdebug( "failed to close database $dbNm: $BerkeleyDB::Error",
+                PDLEVEL1 );
+        }
+
+        # release the lock
+        punlock("$$self{DbDir}/plock");
+
+    } else {
+
+        # Database is already gone or never was
+        delete $$self{Dbs}{$dbNm};
+        $rv = 1;
+    }
+
+    pOut();
+    pdebug( "leaving w/rv: $rv", PDLEVEL2 );
+
+    return $rv;
+}
+
+sub _closeEnv ($) {
+
+    # Purpose:  Closes the environment
+    # Returns:  True/False
+    # Usage:    $self->_closeEnv;
+
+    my $self = shift;
+    my $rv   = 0;
+
+    pdebug( 'entering', PDLEVEL2 );
+    pIn();
+
+    if ( defined $$self{DbEnv} ) {
+
+        # Make sure there are no databases open
+        if ( scalar keys %{ $$self{Dbs} } ) {
+            pdebug( 'cannot close an environment with databases open',
+                PDLEVEL1 );
+        } else {
+            $$self{DbEnv} = undef;
+            $rv = 1;
+        }
+    } else {
+        $rv = 1;
+    }
+
+    pOut();
+    pdebug( "leaving w/rv: $rv", PDLEVEL2 );
+
+    return $rv;
+}
+
+sub _closeAll ($) {
+
+    # Purpose:  Closes all databases and environment
+    # Returns:  True/False
+    # Usage:    $self->_closeAll;
+
+    my $self = shift;
+    my $rv   = 1;
+    my @dbs;
+
+    pdebug( 'entering', PDLEVEL2 );
+    pIn();
+
+    # Close all the databases
+    foreach ( keys %{ $$self{Dbs} } ) {
+        unless ( $rv = $self->_closeDb($_) ) {
+            $rv = 0;
+            last;
+        }
+    }
+
+    # Close the environment
+    if ($rv) {
+        $rv = $self->_closeEnv;
+    }
+
+    pOut();
+    pdebug( "leaving w/rv: $rv", PDLEVEL2 );
+
+    return $rv;
+}
+
+sub _reopenAll ($) {
+
+    # Purpose:  Closes and reopens all databases and environment
+    # Returns:  True/False
+    # Usage:    $self->_reopenAll;
+
+    my $self = shift;
+    my $rv   = 0;
+    my @pkgs = qw(BerkeleyDB::Common BerkeleyDB::CDS::Lock
+        BerkeleyDB::Env BerkeleyDB::Cursor);
+    my ( @dbs, $fqm, $code, %crefs );
+
+    pdebug( 'entering', PDLEVEL2 );
+    pIn();
+
+    # Get a list of open dbs
+    @dbs = keys %{ $$self{Dbs} };
+
+    {
+        no strict 'refs';
+        no warnings qw(redefine prototype);
+
+        # Remove DESTROY hooks from BerkeleyDB temporarily
+        foreach (@pkgs) {
+            $fqm  = $_ . '::DESTROY';
+            $code = *{$fqm}{CODE};
+            if ( defined $code ) {
+                $crefs{$fqm} = $code;
+                *{$fqm} = sub { return 1 };
+            }
+        }
+
+        # Close everything
+        $$self{DbLock} = undef;
+        foreach (@dbs) { delete $$self{Dbs}{$_} }
+        $$self{DbEnv} = undef;
+
+        # Reinstall DESTROY hooks
+        foreach ( keys %crefs ) {
+            *{$_} = $crefs{$_};
+        }
+    }
+
+    # Reopen environment
+    if ( $self->_openEnv ) {
+
+        # Reopen all dbs
+        $rv = 1;
+        foreach (@dbs) {
+            unless ( $self->_openDb($_) ) {
+                $rv = 0;
+                last;
+            }
+        }
+    }
+
+    pOut();
+    pdebug( "leaving w/rv: $rv", PDLEVEL2 );
+
+    return $rv;
+}
+
+sub _chkPID ($) {
+
+    # Purpose:  Checks the PID the object was created under and reopens the
+    #           database & environments if needed.
+    # Returns:  True or croaks.
+    # Usage:    $self->_chkPID;
+
+    my $self = shift;
+
+    # Check PID
+    if ( $$self{PID} != $$ ) {
+        if ( $self->_reopenAll ) {
+            $$self{DbLock} = undef;
+            $$self{PID}    = $$;
+        } else {
+            croak 'failed to reopen databases due to forked process';
+        }
+    }
+
+    return 1;
+}
 
 sub new (@) {
 
@@ -53,100 +343,51 @@ sub new (@) {
         DbName => undef,
         Dbs    => {},
         DbEnv  => undef,
-        DbLock => undef,
         DbMode => undef,
+        DbLock => undef,
+        PID    => $$,
         );
     my $dbdir = defined $args{DbDir}  ? $args{DbDir}  : 'undef';
-    my $dbnm  = defined $args{DbName} ? $args{DbName} : 'undef';
+    my $dbNm  = defined $args{DbName} ? $args{DbName} : 'undef';
     my $mode  = defined $args{DbMode} ? $args{DbMode} : DEF_MODE;
-    my ( $self, $tmp, $lfh, $rv );
+    my ( $self, @dbs, $d );
 
-    pdebug( "entering w/DbDir => \"$dbdir\", DbName => \"$dbnm\"", PDLEVEL1 );
+    pdebug( "entering w/DbDir => \"$dbdir\", DbName => \"$dbNm\"", PDLEVEL1 );
     pIn();
 
-    # Make sure $dbdir & $dbnm are defined and BerkeleyDB is available
-    if ( defined $dbdir and defined $dbnm ) {
+    # Bless the reference
+    $self = \%init;
+    bless $self, $class;
 
-        # Create the directory (and let umask determine the permissions)
-        if ( pmkdir( $dbdir, $mode ) ) {
+    # Populate list of dbs
+    @dbs = ( defined $dbNm and ref($dbNm) eq 'ARRAY' ) ? @$dbNm : ($dbNm);
 
-            # Create lock file and lock it while doing initialization.  I
-            # know, this isn't ideal when creating temporary objects that
-            # need only read access, but it's the only way to avoid race
-            # conditions if this is the process that creates the database.
-            if ( sysopen $lfh, "$dbdir/db.lock", O_RDWR | O_CREAT | O_EXCL,
-                $mode ) {
-                $rv = flock $lfh, LOCK_EX;
-            } elsif ( sysopen $lfh, "$dbdir/db.lock", O_RDWR, $mode ) {
-                $rv = flock $lfh, LOCK_SH;
-            }
-            unless ($rv) {
-                pOut();
-                pdebug( 'leaving w/rv: undef', PDLEVEL1 );
-            }
+    # Set some defaults
+    $$self{DbMode} = $mode;
+    $$self{DbDir}  = $dbdir;
 
-            # Create and bless the object reference
-            @init{qw(DbDir DbName DbLock DbMode)} =
-                ( $dbdir, $dbnm, $lfh, $mode );
-            $self = \%init;
-            bless $self, $class;
+    # Make sure directory is available and writeable
+    $self = undef
+        unless defined $dbdir
+            and length $dbdir
+            and -d $dbdir
+            and -w _;
 
-            # Initialize the environment
-            no strict 'subs';
+    # Open database environment
+    if ($self) {
+        $self = undef unless $self->_openEnv;
+    }
 
-            # Check creation of db env
-            if (defined(
-                    $tmp = BerkeleyDB::Env->new(
-                        '-Home'    => $dbdir,
-                        '-ErrFile' => \*STDERR,
-                        '-Flags' => DB_CREATE | DB_INIT_CDB | DB_INIT_MPOOL |
-                            DB_CDB_ALLDB,
-                        '-Mode' => $mode,
-                        ) )
-                ) {
-
-                # Success! Now, create the database
-                $self->{DbEnv} = $tmp;
-                $tmp = BerkeleyDB::Hash->new(
-                    '-Filename' => $dbnm,
-                    '-Env'      => $self->{DbEnv},
-                    '-Flags'    => DB_CREATE,
-                    '-Mode'     => $mode,
-                    );
-
-                # Check if creating the db was successful
-                if ( defined $tmp ) {
-
-                    # Success!
-                    $self->{Dbs}->{$dbnm} = $tmp;
-
-                } else {
-
-                    # Abysmal failure!
+    # Open database(s)
+    if ($self) {
+        if ( defined $dbNm ) {
+            $$self{DbName} = $dbs[0];
+            foreach (@dbs) {
+                unless ( defined $_ and $self->_openDb($_) ) {
                     $self = undef;
-                    Paranoid::ERROR =
-                        pdebug( "failed to create BerkeleyDB $dbnm: $!",
-                        PDLEVEL1 );
+                    last;
                 }
-
-            } else {
-
-                # Abject failure!
-                $self = undef;
-                Paranoid::ERROR =
-                    pdebug( "failed to initialize BerkeleyDB Env: $!",
-                    PDLEVEL1 );
             }
-
-            # Unlock the database
-            flock $lfh, LOCK_UN;
-
-        } else {
-
-            # Failed to create the db directory
-            Paranoid::ERROR = pdebug(
-                "failed to create directory $dbdir: @{[ Paranoid::ERROR ]}",
-                PDLEVEL1 );
         }
     }
 
@@ -164,42 +405,22 @@ sub addDb ($$) {
     # Usage:    $rv = $db->addDb( 'foo.db' );
 
     my $self  = shift;
-    my $dbnm  = shift;
-    my $dbdir = $self->{DbDir};
-    my $n     = defined $dbnm ? $dbnm : 'undef';
-    my $mode  = $self->{DbMode};
+    my $dbNm  = shift;
+    my $dbdir = $$self{DbDir};
+    my $n     = defined $dbNm ? $dbNm : 'undef';
+    my $mode  = $$self{DbMode};
     my $rv    = 0;
     my $db;
 
     pdebug( "entering w/($n)", PDLEVEL1 );
     pIn();
 
-    # Make sure a valid name was passed and it hasn't already been created
-    if ( defined $dbnm and not exists ${ $self->{Dbs} }{$dbnm} ) {
+    croak 'Mandatory first argument must be a valid filename'
+        unless defined $dbNm and length $dbNm;
 
-        # Get exclusive lock
-        flock $$self{DbLock}, LOCK_EX;
+    $self->_chkPID;
 
-        $db = BerkeleyDB::Hash->new(
-            '-Filename' => $dbnm,
-            '-Env'      => $self->{DbEnv},
-            '-Flags'    => DB_CREATE,
-            '-Mode'     => $mode,
-            );
-
-        # Release lock
-        flock $$self{DbLock}, LOCK_UN;
-
-        # Store & report the result
-        $rv = defined $db ? 1 : 0;
-        if ($rv) {
-            $self->{Dbs}->{$dbnm} = $db;
-            pdebug( "added new database: $dbnm", PDLEVEL2 );
-        } else {
-            Paranoid::ERROR =
-                pdebug( "failed to add new database: $dbnm", PDLEVEL1 );
-        }
-    }
+    $rv = $self->_openDb($dbNm);
 
     pOut();
     pdebug( "leaving w/rv: $rv", PDLEVEL1 );
@@ -214,13 +435,12 @@ sub getVal ($$;$) {
     # Usage:    $db->getVal( $key );
     # Usage:    $db->getVal( $key, $dbName );
 
-    my $self  = shift;
-    my $key   = shift;
-    my $db    = shift;
-    my $k     = defined $key ? $key : 'undef';
-    my $d     = defined $db ? $db : 'undef';
-    my $dref  = $self->{Dbs};
-    my $dbdir = $self->{DbDir};
+    my $self = shift;
+    my $key  = shift;
+    my $db   = shift;
+    my $k    = defined $key ? $key : 'undef';
+    my $d    = defined $db ? $db : 'undef';
+    my $dref = $$self{Dbs};
     my ( $val, $v );
 
     pdebug( "entering w/($k)($d)", PDLEVEL1 );
@@ -228,9 +448,11 @@ sub getVal ($$;$) {
 
     # Set the default database name if it wasn't passed
     unless ( defined $db ) {
-        $db = $self->{DbName};
+        $db = $$self{DbName};
         pdebug( "setting db to default ($db)", PDLEVEL2 );
     }
+
+    $self->_chkPID;
 
     # Check the existence of the database
     if ( exists $$dref{$db} ) {
@@ -262,16 +484,15 @@ sub setVal ($$;$$) {
     # Usage:    $db->setVal( $key, $value );
     # Usage:    $db->setVal( $key, $value, $dbName );
 
-    my $self  = shift;
-    my $key   = shift;
-    my $val   = shift;
-    my $db    = shift;
-    my $k     = defined $key ? $key : 'undef';
-    my $v     = defined $val ? $val : 'undef';
-    my $d     = defined $db ? $db : 'undef';
-    my $dref  = $self->{Dbs};
-    my $dbdir = $self->{DbDir};
-    my $rv    = 0;
+    my $self = shift;
+    my $key  = shift;
+    my $val  = shift;
+    my $db   = shift;
+    my $k    = defined $key ? $key : 'undef';
+    my $v    = defined $val ? $val : 'undef';
+    my $d    = defined $db ? $db : 'undef';
+    my $dref = $$self{Dbs};
+    my $rv   = 0;
     my $lock;
 
     pdebug( "entering w/($k)($v)($d)", PDLEVEL1 );
@@ -279,17 +500,25 @@ sub setVal ($$;$$) {
 
     # Set the default database name if it wasn't passed
     unless ( defined $db ) {
-        $db = $self->{DbName};
+        $db = $$self{DbName};
         pdebug( "setting db to default ($db)", PDLEVEL2 );
     }
+
+    $self->_chkPID;
 
     # Check the existence of the database
     if ( exists $$dref{$db} ) {
 
+        # Use an inherited lock or get a new one
+        $lock =
+            defined $$self{DbLock}
+            ? $$self{DbLock}
+            : $$dref{$db}->cds_lock;
+
         # Requested database exists
         #
         # Make sure key is defined
-        if ( defined $key and defined( $lock = $$dref{$db}->cds_lock ) ) {
+        if ( defined $key and defined $lock ) {
 
             # Check whether setting a new record or deleting one
             if ( defined $val ) {
@@ -305,16 +534,15 @@ sub setVal ($$;$$) {
                 $rv = !$$dref{$db}->db_del($key);
             }
 
-            # Unlock database
-            $$dref{$db}->db_sync;
-            $lock->cds_unlock;
-
         } else {
 
             # Report use of an undefined key
             Paranoid::ERROR =
                 pdebug( 'attempted to use an undefined key', PDLEVEL1 );
         }
+
+        # Unlock database
+        $lock->cds_unlock unless defined $$self{DbLock};
 
     } else {
 
@@ -344,21 +572,31 @@ sub getKeys ($;$$) {
     my $subRef = shift;
     my $d      = defined $db ? $db : 'undef';
     my $s      = defined $subRef ? $subRef : 'undef';
-    my $dref   = $self->{Dbs};
-    my $dbdir  = $self->{DbDir};
-    my ( $cursor, $key, $val, @keys );
+    my $dref   = $$self{Dbs};
+    my ( $cursor, $key, $val, @keys, $locked );
 
     pdebug( "entering w/($d)($s)", PDLEVEL1 );
     pIn();
 
     # Set the default database name if it wasn't passed
     unless ( defined $db ) {
-        $db = $self->{DbName};
+        $db = $$self{DbName};
         pdebug( "setting db to default ($db)", PDLEVEL2 );
     }
 
+    $self->_chkPID;
+
     # Make sure database exists
     if ( exists $$dref{$db} ) {
+
+        # Create/store a global lock if a subref is passed
+        # (checking to make sure we don't already have one)
+        if ( defined $$self{DbLock} ) {
+            $locked = 1;
+        } else {
+            $locked = 0;
+            $$self{DbLock} = $$dref{$db}->cds_lock;
+        }
 
         # Retrieve all the keys
         $key = $val = '';
@@ -371,7 +609,7 @@ sub getKeys ($;$$) {
             if ( defined $key ) {
 
                 # The method was passed a subroutine reference, so
-                # unlock the database and call the routine
+                # pass the db object ref and values to the sub
                 &$subRef( $self, $key, $val ) if defined $subRef;
 
                 # Save the key;
@@ -381,6 +619,12 @@ sub getKeys ($;$$) {
         }
         $cursor->c_close;
         undef $cursor;
+
+        # Close a global lock if we opened it
+        unless ($locked) {
+            $$self{DbLock}->cds_unlock;
+            $$self{DbLock} = undef;
+        }
 
     } else {
 
@@ -403,12 +647,11 @@ sub purgeDb ($;$) {
     # Usage:    $rv = $db->purgeDb;
     # Usage:    $rv = $db->purgeDb( $dbName );
 
-    my $self  = shift;
-    my $db    = shift;
-    my $d     = defined $db ? $db : 'undef';
-    my $dref  = $self->{Dbs};
-    my $dbdir = $self->{DbDir};
-    my $rv    = 0;
+    my $self = shift;
+    my $db   = shift;
+    my $d    = defined $db ? $db : 'undef';
+    my $dref = $$self{Dbs};
+    my $rv   = 0;
     my $lock;
 
     pdebug( "entering w/($d)", PDLEVEL1 );
@@ -416,24 +659,27 @@ sub purgeDb ($;$) {
 
     # Set the default database name if it wasn't passed
     unless ( defined $db ) {
-        $db = $self->{DbName};
+        $db = $$self{DbName};
         pdebug( "setting db to default ($db)", PDLEVEL2 );
     }
+
+    $self->_chkPID;
 
     # Make sure database exists
     if ( exists $$dref{$db} ) {
 
-        # Lock database for write mode
-        flock $$self{DbLock}, LOCK_EX;
-        $lock = $$dref{$db}->cds_lock;
+        # Use an inherited lock or get a new one
+        $lock =
+            defined $$self{DbLock}
+            ? $$self{DbLock}
+            : $$dref{$db}->cds_lock;
 
         # Purge the database
         $$dref{$db}->truncate($rv);
 
         # Unlock database
         $$dref{$db}->db_sync;
-        $lock->cds_unlock;
-        flock $$self{DbLock}, LOCK_UN;
+        $lock->cds_unlock unless defined $$self{DbLock};
 
     } else {
 
@@ -457,7 +703,7 @@ sub listDbs ($) {
     # Usage:    @dbs = $db->listDbs;
 
     my $self = shift;
-    my $dref = $self->{Dbs};
+    my $dref = $$self{Dbs};
     my @dbs  = keys %$dref;
 
     pdebug( 'entering',           PDLEVEL1 );
@@ -466,26 +712,84 @@ sub listDbs ($) {
     return @dbs;
 }
 
-sub DESTROY {
-    my $self  = shift;
-    my $dref  = $self->{Dbs};
-    my $dbdir = $self->{DbDir};
+sub cds_lock ($) {
+
+    # Purpose:  Places a lock on the database environment
+    # Returns:  True/False
+    # Usage:    $self->cds_lock;
+
+    my $self = shift;
+    my $dref = $$self{Dbs};
+    my $rv   = 0;
+    my $db;
 
     pdebug( 'entering', PDLEVEL1 );
     pIn();
 
-    # Sync & Close all dbs
-    flock $$self{DbLock}, LOCK_EX;
-    foreach ( keys %$dref ) {
-        if ( defined $$dref{$_} ) {
-            pdebug( "sync/close $_", PDLEVEL2 );
-            $$dref{$_}->db_close;
-            delete $$dref{$_};
-        }
+    # Set the default database name if it wasn't passed
+    unless ( defined $db ) {
+        $db = $$self{DbName};
+        pdebug( "setting db to default ($db)", PDLEVEL2 );
     }
 
-    # Release the locks
-    flock $$self{DbLock}, LOCK_UN;
+    if ( defined $$self{DbLock} ) {
+
+        # Already have a lock
+        $rv = 1;
+
+    } else {
+
+        # Get a new lock
+        $rv = defined( $$self{DbLock} = $$dref{$db}->cds_lock );
+
+    }
+    pOut();
+    pdebug( "leaving w/rv: $rv", PDLEVEL1 );
+
+    return $rv;
+}
+
+sub cds_unlock ($) {
+
+    # Purpose:  Unlocks the database environment
+    # Returns:  True/False
+    # Usage:    $self->cds_unlock;
+
+    my $self = shift;
+    my $rv   = 0;
+
+    pdebug( 'entering', PDLEVEL1 );
+    pIn();
+
+    # Remove the lock
+    if ( defined $$self{DbLock} ) {
+        $$self{DbLock}->cds_unlock;
+        $$self{DbLock} = undef;
+    }
+    $rv = 1;
+
+    pOut();
+    pdebug( "leaving w/rv: $rv", PDLEVEL1 );
+
+    return $rv;
+}
+
+sub DESTROY {
+    my $self  = shift;
+    my $dref  = $$self{Dbs};
+    my $dbdir = $$self{DbDir};
+
+    pdebug( 'entering', PDLEVEL1 );
+    pIn();
+
+    # Release any locks
+    if ( defined $$self{DbLock} ) {
+        $$self{DbLock}->cds_unlock;
+        $$self{DbLock} = undef;
+    }
+
+    # Sync & Close all dbs
+    $self->_closeAll;
 
     pOut();
     pdebug( 'leaving', PDLEVEL1 );
@@ -499,18 +803,18 @@ __END__
 
 =head1 NAME
 
-Paranoid::BerkeleyDB -- BerkeleyDB concurrent-access Object
+Paranoid::BerkeleyDB -- BerkeleyDB CDS Object
 
 =head1 VERSION
 
-$Id: BerkeleyDB.pm,v 0.84 2011/08/18 06:55:27 acorliss Exp $
+$Id: BerkeleyDB.pm,v 0.85 2011/12/08 07:30:26 acorliss Exp $
 
 =head1 SYNOPSIS
 
   use Paranoid::BerkeleyDB;
 
   $db = Paranoid::BerkeleyDB->new(DbDir => '/tmp', DbName => 'foo.db', 
-                                  DbMode => 0770);
+                                  DbMode => 0640);
   $rv = $db->addDb($dbname);
 
   $val = $db->getVal($key);
@@ -529,32 +833,36 @@ $Id: BerkeleyDB.pm,v 0.84 2011/08/18 06:55:27 acorliss Exp $
 
   @dbs = $db->listDbs();
 
+  $db->cds_lock;
+  $db->cds_unlock;
+
   # Close environment & databases
   $db = undef;
 
 =head1 DESCRIPTION
 
-This provides a OO-based wrapper for BerkeleyDB that creates concurrent-access
-BerkeleyDB databases.  Each object can have multiple databases, but all
-databases within an object will use a single shared environment.  To make this
-multiprocess safe an external lock file is used with only one process at a
-time allowed to hold an exclusive write lock, even if the write is intended
-for a different database.
+This provides a OO-based wrapper for BerkeleyDB that creates Concurrent Data
+Store (CDS) databases.  This is a feature of Berkeley DB v3.x and higher that
+provides for concurrent use of Berkeley DBs.  It provides for multiple reader,
+single writer locking, and multiple databases can share the same environment.
 
-Databases and environments are created using the defaults for both the
-environment and the databases.  This won't be the highest performance
-implementation for BerkeleyDB, but it should be the safest and most robust.
+This module hides much of the complexity of the API (as provided by the
+L<BerkeleyDB(3)> module.  Conversely, it also severely limits the options and
+flexibility of the module and libraries as well.  In short, if you want a
+quick and easy way for local processes to have concurrent access to Berkeley
+DBs without learning bdb internals, this is your module.  If you want full
+access to all of the bdb features and tuning/scalability features, you'd
+better learn dbd.
 
-Limitations:  all keys and all values must be valid strings.  That means that
-attempting to set a valid key's associated value to B<undef> will fail to add
-that key to the database.  In fact, if the an existing key is assigned a
-undefined value it will be deleted from the database.
+One particulary nice feature of this module, however, is that it's fork-safe.
+That means you can open a CDS db in a parent process, fork, and continue r/w
+operations without fear of corruption or lock contention due to stale
+filehandles.
 
-B<NOTE> Many versions of BerkeleyDB liberaries that provide concurrent access
-are buggy as all hell.  I can vouch that as of 4.6.21 most of those problems
-have gone away.  In a nutshell, if you get errors about running out of
-lockers the problem is likely in the db libraries themselves, not in this
-module.
+B<lock> and B<unlock> methods are also provided to allow mass changes as an
+atomic operation.  Since the environment is always created with a single
+global write lock (regardless of how many databases exist within the
+environment) operations can be made on multiple databases.
 
 =head1 SUBROUTINES/METHODS
 
@@ -623,10 +931,12 @@ return all the keys in the hash in hash order.  If a subroutine reference is
 called it will be called as each key/value pair is iterated over with three
 arguments:
 
-    &$subRef($self, $key, $value);
+    &$subRef($dbObj, $key, $value);
 
-with $self being a handle to the current Paranoid::BerkeleyDB object.  You may
-use this object handle to perform other database operations as needed.
+with $dbObj being a handle to the current database object.  You may
+use this ref to make changes to the database.  Anytime a code
+reference is handed to this method it is automatically opened with a write
+lock under the assumption that this might be a transformative operation.
 
 =head2 purgeDb
 
@@ -643,6 +953,21 @@ requested.
   @dbs = $db->listDbs();
 
 This method returns a list of databases accessible by this object.
+
+=head2 cds_lock
+
+    $db->cds_lock;
+
+This method places a global write lock on the shared database environment.
+Since environments are created with a global lock (covering all databases in
+the environment) no writes or reads can be done by other processes until this
+is unlocked.
+
+=head2 cds_unlock
+
+    $db->cds_unlock;
+
+This method removes a global write lock on the shared database environment.
 
 =head2 DESTROY
 
@@ -677,27 +1002,38 @@ L<BerkeleyDB>
 
 =head1 BUGS AND LIMITATIONS
 
-Due to the excessive reliance on lockfiles meant to prevent race conditions
-with other processes, this won't be the fastest db access if you're rapidly
-creating, destroying, and re-creating objects.  If you're keeping an object
-around for extended use it should be reasonable.
+Race conditions, particularly on database creation/opens, are worked around by
+the use of external lock files and B<flock> advisory file locks.  Lockfiles
+are not used during normal operations on the database.
 
-If you have multiple dbs accessible via one object (and environment) you do
-need to remember that there is only one global write lock per environment.
-So, even if other processes need to access a different db that what is being
-written to, they'll have to wait until the write lock is released.
+While CDS allows for safe concurrent use of database files, it makes no
+allowances for recovery from stale locks.  If a process exits badly and fails
+to release a write lock (which causes all other process operations to block
+indefinitely) you have to intervene manually.  The brute force intervention
+would mean killing all accessing processes and deleting the environment files
+(files in the same directory call __db.*).  Those will be recreated by the
+next process to access them.
 
-Finally, no provisions have been made to allow tuning of the BerkeleyDB
-environment.  If the defaults don't work well for your workloads don't use
-this module.
+Berkeley DB provides a handy CLI utility called L<db_stat(1)>.  It can provide
+some statistics on your shared database environment via invocation like so:
 
-End sum:  this module should be safe and reliable, but not necessarily
-high-performing, especially with workloads with a high write-to-read
-transaction ratio.
+  db_stat -m -h .
+
+The last argument, of course, is the directory in which the environment was
+created.  The example above would work fine if your working directory was that
+directory.
+
+You can also show all existing locks via:
+
+    db_stat -N -Co -h .
+
+=head1 SEE ALSO
+
+    L<BerkeleyDB(3)>
 
 =head1 HISTORY
 
-None as of yet.
+2011/12/06:  Added fork-safe operation
 
 =head1 AUTHOR
 

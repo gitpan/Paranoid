@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Network.pm,v 0.64 2011/04/15 22:05:13 acorliss Exp $
+# $Id: Network.pm,v 0.66 2011/12/08 07:53:07 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -28,7 +28,7 @@ use Paranoid::Module;
 use Socket;
 use Carp;
 
-($VERSION) = ( q$Revision: 0.64 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.66 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 @EXPORT      = qw(ipInNetwork hostInDomain extractIPs);
 @EXPORT_OK   = qw(ipInNetwork hostInDomain extractIPs);
@@ -74,11 +74,19 @@ sub ipInNetwork ($@) {
             $family = AF_INET();
         } else {
 
-            # If Socket6 is present we'll check for an IPv6 address
-            if ( loadModule('Socket6') ) {
+            # If Socket6 is present or we have Perl 5.14 or higher we'll check
+            # for IPv6 addresses
+            if ( $] >= 5.014 or loadModule('Socket6') ) {
 
-                $inet_pton = \&Socket6::inet_pton;
-                $af_inet6  = \&Socket6::AF_INET6;
+                # Choose Socket or Socket6 functions
+                if ( $] >= 5.014 ) {
+                    $inet_pton = \&Socket::inet_pton;
+                    $af_inet6  = \&Socket::AF_INET6;
+                } else {
+                    $inet_pton = \&Socket6::inet_pton;
+                    $af_inet6  = \&Socket6::AF_INET6;
+                }
+
                 if ( defined &$inet_pton( &$af_inet6(), $ip ) ) {
 
                     # Convert IPv6-encoded IPv4 addresses to pure IPv4
@@ -287,6 +295,7 @@ sub extractIPs (@) {
 
     my @strings = grep {defined} @_;
     my ( $string, @ips, $ip, @tmp, @rv );
+    my ($inet_pton, $af_inet6);
 
     pdebug( "entering w/(@strings)", PDLEVEL1 );
     pIn();
@@ -301,8 +310,19 @@ sub extractIPs (@) {
             push @rv, $ip if defined inet_aton($ip);
         }
 
-        # If we have Socket6 installed we'll look for IPv6 addresses
-        if ( loadModule('Socket6') ) {
+        # If Socket6 is present or we have Perl 5.14 or higher we'll check
+        # for IPv6 addresses
+        if ( $] >= 5.014 or loadModule('Socket6') ) {
+
+                # Choose Socket or Socket6 functions
+                if ( $] >= 5.014 ) {
+                    $inet_pton = \&Socket::inet_pton;
+                    $af_inet6  = \&Socket::AF_INET6;
+                } else {
+                    $inet_pton = \&Socket6::inet_pton;
+                    $af_inet6  = \&Socket6::AF_INET6;
+                }
+
             @ips = ( $string =~ m/(@{[ IP6REGEX ]})/smogix );
 
             # Filter out addresses with more than one ::
@@ -312,7 +332,7 @@ sub extractIPs (@) {
             foreach $ip (@ips) {
                 push @rv, $ip
                     if
-                    defined &Socket6::inet_pton( &Socket6::AF_INET6(), $ip );
+                    defined &$inet_pton( &$af_inet6(), $ip );
             }
         }
     }
@@ -336,7 +356,7 @@ Paranoid::Network - Network functions for paranoid programs
 
 =head1 VERSION
 
-$Id: Network.pm,v 0.64 2011/04/15 22:05:13 acorliss Exp $
+$Id: Network.pm,v 0.66 2011/12/08 07:53:07 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -348,8 +368,9 @@ $Id: Network.pm,v 0.64 2011/04/15 22:05:13 acorliss Exp $
 =head1 DESCRIPTION
 
 This modules contains functions that may be useful for network operations.
-This module requires an optional module (B<Socket6>) if you want IPv6 support
-in B<ipInNetwork>.
+IPv6 is supported out of the box starting with Perl 5.14.  Earlier versions of
+Perl will require L<Socket6(3)> installed as well.  If it is available this
+module will use it automatically.
 
 =head1 SUBROUTINES/METHODS
 
@@ -366,9 +387,10 @@ with full netmasks:
                  192.168.0.0/24 
                  172.16.12.0/255.255.240.0);
 
-IPv6 is support if the B<Socket6> module is installed.  This routine will
-select the appropriate address family based on the IP you're testing and
-filter out the opposing address family in the list.
+IPv6 is supported if the L<Socket6(3)> module is installed or you're running
+Perl 5.14 or higher.  This routine will select the appropriate address family 
+based on the IP you're testing and filter out the opposing address family in 
+the list.
 
 B<NOTE:>  IPv4 addresses encoded as IPv6 addresses, e.g.:
 
@@ -412,8 +434,9 @@ domains should have the preceding '.' (i.e., 'foo.com' rather than
     @ips = extractIP($string1, $string2);
 
 This function extracts IP addresses from arbitrary text.  If you have
-B<Socket6> installed it will extract IPv6 addresses as well as IPv4 addresses.
-This extracts only IP addresses, not network addresses in CIDR or dotted octet
+L<Socket6(3)> installed or running Perl 5.14 or higher it will extract 
+IPv6 addresses as well as IPv4 addresses.  This extracts only IP 
+addresses, not network addresses in CIDR or dotted octet
 notation.  In the case of the latter the netmask will be extracted as an
 additional address.
 
@@ -439,6 +462,10 @@ L<Paranoid>
 =item o
 
 L<Socket>
+
+=item o
+
+L<Socket6> (optional)
 
 =back
 

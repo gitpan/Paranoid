@@ -21,7 +21,11 @@ ok( pmkdir( 't/test/{ab,cd,ef{1,2}}' ), 'pmkdir 1' );
 foreach (qw(t/test/ab t/test/cd t/test/ef1 t/test/ef2 t/test)) {
   rmdir $_ };
 
-ok( ! pmkdir( 't/test/{ab,cd,ef{1,2}}', 0555 ), 'pmkdir 2' );
+SKIP: {
+  skip( 'Running as root -- skipping permissions test', 1) if $< == 0;
+  ok( ! pmkdir( 't/test/{ab,cd,ef{1,2}}', 0555 ), 'pmkdir 2' );
+}
+
 rmdir 't/test';
 
 $glob = Paranoid::Glob->new(

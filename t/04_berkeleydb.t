@@ -12,6 +12,8 @@ use warnings;
 
 psecureEnv();
 
+#PDEBUG = 20;
+
 my ( $rv, %errors, $db );
 
 $rv = loadModule("Paranoid::BerkeleyDB");
@@ -19,6 +21,7 @@ $rv = loadModule("Paranoid::BerkeleyDB");
 SKIP: {
     skip( 'BerkeleyDB module not found', 34 ) unless $rv;
 
+    mkdir './t/db';
     $db = Paranoid::BerkeleyDB->new( DbDir => './t/db', DbName => 'test.db',
                                      DbMode => 0777 );
     isnt( $db, undef, 'got db handle' );
@@ -80,12 +83,11 @@ SKIP: {
     }
 
     sub testIterator {
-       my $db  = shift;
-       my $key = shift;
-       my $val = shift;
+       my $dbh      = shift;
+       my $key      = shift;
+       my $val      = shift;
 
-       #warn "Power of $key is $val\n";
-       $db->setVal( $key, undef );
+       $dbh->setVal($key, undef);
     }
 
     $rv = $db->getKeys(undef, \&testIterator);
@@ -94,7 +96,6 @@ SKIP: {
     is( $rv, 0, 'iterator 2');
 
     # Cleanup
-    $db = undef;
     system 'rm -rf t/db';
 }
 

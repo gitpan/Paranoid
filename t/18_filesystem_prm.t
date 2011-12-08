@@ -72,8 +72,11 @@ ok( ! -d './t/test_rm', 'prmR 3' );
 ok( prmR( \%errors, './t/test_rm_not_there'), 'prmR 4' );
 mkdir './t/test_rm_noperms';
 mkdir './t/test_rm_noperms/foo';
-chmod 0400, './t/test_rm_noperms';
-ok( ! prmR( \%errors, './t/test_rm_noperms/foo'), 'prmR 5' );
+SKIP: {
+  skip( 'Running as root -- skipping permissions test', 1 );
+  chmod 0400, './t/test_rm_noperms';
+  ok( ! prmR( \%errors, './t/test_rm_noperms/foo'), 'prmR 5' );
+}
 chmod 0755, './t/test_rm_noperms';
 ok( prmR( \%errors, './t/test_rm_noperms'), 'prmR 6' );
 

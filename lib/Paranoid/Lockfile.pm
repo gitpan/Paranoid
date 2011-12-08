@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Lockfile.pm,v 0.63 2011/08/18 06:54:32 acorliss Exp $
+# $Id: Lockfile.pm,v 0.65 2011/12/08 07:53:07 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -29,7 +29,7 @@ use Paranoid::Debug qw(:all);
 use Paranoid::Filesystem;
 use Carp;
 
-($VERSION) = ( q$Revision: 0.63 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.65 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 @EXPORT      = qw(plock punlock pcloseLockfile);
 @EXPORT_OK   = qw(plock punlock pcloseLockfile);
@@ -46,7 +46,8 @@ use constant PRIV_UMASK => 0600;
 {
 
     # file descriptor stash
-    my %fd;
+    my %fd;     # File descriptor stash
+    my %pid;    # PID tracking for fd
 
     sub _clearLocks {
 
@@ -103,7 +104,12 @@ use constant PRIV_UMASK => 0600;
             # Retrieve a previously stored filehandle
             $fd = $fd{$filename};
 
-        } else {
+            # Make sure PID is the same, otherwise we'll need to
+            # reopen the file
+            $irv = $pid{$filename} == $$ ? 1 : 0;
+        }
+
+        unless ($irv) {
 
             # Open a new filehandle
             #
@@ -120,7 +126,10 @@ use constant PRIV_UMASK => 0600;
                 || sysopen( $fd, $filename, O_RDWR );
 
             # Store the new filehandle
-            $fd{$filename} = $fd if $irv;
+            if ($irv) {
+                $fd{$filename}  = $fd;
+                $pid{$filename} = $$;
+            }
         }
 
         # Flock it
@@ -205,7 +214,7 @@ Paranoid::Lockfile - Paranoid Lockfile support
 
 =head1 VERSION
 
-$Id: Lockfile.pm,v 0.63 2011/08/18 06:54:32 acorliss Exp $
+$Id: Lockfile.pm,v 0.65 2011/12/08 07:53:07 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -217,9 +226,10 @@ $Id: Lockfile.pm,v 0.63 2011/08/18 06:54:32 acorliss Exp $
 
 =head1 DESCRIPTION
 
-This modules provides a relatively safe locking mechanism multiple processes.
-This does not work over NFS or across remote systems, this is only intended
-for use on a single system at a time, and only on those that support B<flock>.
+This modules provides a relatively safe locking mechanism across multiple 
+processes.  This does not work over NFS or across remote systems, this is 
+only intended for use on a single system at a time, and only on those that 
+support B<flock>.
 
 B<sysopen> is used to avoid race conditions with multiple process attempting
 to create the same file simultaneously.

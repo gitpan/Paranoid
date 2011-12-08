@@ -66,7 +66,7 @@ ok( scalar( grep !/:/, extractIPs( $ifconfig, $iproute ) == 9 ),
 
 SKIP: {
     skip( 'Missing Socket6 module -- skipping IPv6 tests', 12 )
-        unless loadModule('Socket6');
+        unless $] >= 5.014 or loadModule('Socket6');
 
     ok( ipInNetwork( '::1', '::1' ), 'ipInNetwork 7' );
     ok( !ipInNetwork( '::1', '127.0.0.1/8' ), 'ipInNetwork 8' );
