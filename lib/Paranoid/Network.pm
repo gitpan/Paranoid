@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Network.pm,v 0.66 2011/12/08 07:53:07 acorliss Exp $
+# $Id: Network.pm,v 0.67 2011/12/20 03:00:42 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -24,11 +24,10 @@ use warnings;
 use vars qw($VERSION @EXPORT @EXPORT_OK %EXPORT_TAGS);
 use base qw(Exporter);
 use Paranoid::Debug qw(:all);
-use Paranoid::Module;
-use Socket;
+use Paranoid::Network::Socket;
 use Carp;
 
-($VERSION) = ( q$Revision: 0.66 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.67 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 @EXPORT      = qw(ipInNetwork hostInDomain extractIPs);
 @EXPORT_OK   = qw(ipInNetwork hostInDomain extractIPs);
@@ -64,7 +63,6 @@ sub ipInNetwork ($@) {
     my $rv       = 0;
     my $oip      = $ip;
     my ( $bip, $bnet, $bmask, $family, @tmp, $irv );
-    my ( $inet_pton, $af_inet6 );
 
     # Validate arguments
     if ( defined $ip ) {
@@ -76,25 +74,16 @@ sub ipInNetwork ($@) {
 
             # If Socket6 is present or we have Perl 5.14 or higher we'll check
             # for IPv6 addresses
-            if ( $] >= 5.014 or loadModule('Socket6') ) {
+            if ( has_ipv6() or $] >= 5.012 ) {
 
-                # Choose Socket or Socket6 functions
-                if ( $] >= 5.014 ) {
-                    $inet_pton = \&Socket::inet_pton;
-                    $af_inet6  = \&Socket::AF_INET6;
-                } else {
-                    $inet_pton = \&Socket6::inet_pton;
-                    $af_inet6  = \&Socket6::AF_INET6;
-                }
-
-                if ( defined &$inet_pton( &$af_inet6(), $ip ) ) {
+                if ( defined inet_pton( AF_INET6(), $ip ) ) {
 
                     # Convert IPv6-encoded IPv4 addresses to pure IPv4
                     if ( $ip =~ m/^::ffff:(@{[ IP4REGEX ]})$/smio ) {
                         $ip     = $1;
                         $family = AF_INET();
                     } else {
-                        $family = &$af_inet6();
+                        $family = AF_INET6();
                     }
                 } else {
                     croak 'Mandatory first argument must be a '
@@ -119,7 +108,7 @@ sub ipInNetwork ($@) {
             defined(
                 $family == AF_INET()
                 ? inet_aton($1)
-                : &$inet_pton( &$af_inet6(), $1 ) );
+                : inet_pton( AF_INET6(), $1 ) );
         }
     } @networks;
 
@@ -133,7 +122,7 @@ sub ipInNetwork ($@) {
         $bip =
             $family == AF_INET()
             ? [ unpack 'N', inet_aton($ip) ]
-            : [ unpack 'NNNN', &$inet_pton( &$af_inet6(), $ip ) ];
+            : [ unpack 'NNNN', inet_pton( AF_INET6(), $ip ) ];
 
         # Compare against all networks
         foreach (@networks) {
@@ -195,7 +184,7 @@ sub ipInNetwork ($@) {
                 $bnet =
                     $family == AF_INET()
                     ? [ unpack 'N', inet_aton($bnet) ]
-                    : [ unpack 'NNNN', &$inet_pton( &$af_inet6(), $bnet ) ];
+                    : [ unpack 'NNNN', inet_pton( AF_INET6(), $bnet ) ];
 
                 # Start comparing our chunks
                 $irv = 1;
@@ -222,7 +211,7 @@ sub ipInNetwork ($@) {
                 $bnet =
                     $family == AF_INET()
                     ? [ unpack 'N', inet_aton($_) ]
-                    : [ unpack 'NNNN', &$inet_pton( &$af_inet6(), $_ ) ];
+                    : [ unpack 'NNNN', inet_pton( AF_INET6(), $_ ) ];
 
                 # Do the comparison
                 $irv = 1;
@@ -295,7 +284,6 @@ sub extractIPs (@) {
 
     my @strings = grep {defined} @_;
     my ( $string, @ips, $ip, @tmp, @rv );
-    my ($inet_pton, $af_inet6);
 
     pdebug( "entering w/(@strings)", PDLEVEL1 );
     pIn();
@@ -312,16 +300,7 @@ sub extractIPs (@) {
 
         # If Socket6 is present or we have Perl 5.14 or higher we'll check
         # for IPv6 addresses
-        if ( $] >= 5.014 or loadModule('Socket6') ) {
-
-                # Choose Socket or Socket6 functions
-                if ( $] >= 5.014 ) {
-                    $inet_pton = \&Socket::inet_pton;
-                    $af_inet6  = \&Socket::AF_INET6;
-                } else {
-                    $inet_pton = \&Socket6::inet_pton;
-                    $af_inet6  = \&Socket6::AF_INET6;
-                }
+        if ( has_ipv6() or $] >= 5.012 ) {
 
             @ips = ( $string =~ m/(@{[ IP6REGEX ]})/smogix );
 
@@ -331,8 +310,7 @@ sub extractIPs (@) {
             # Validate remaining addresses with inet_pton
             foreach $ip (@ips) {
                 push @rv, $ip
-                    if
-                    defined &$inet_pton( &$af_inet6(), $ip );
+                    if defined inet_pton( AF_INET6(), $ip );
             }
         }
     }
@@ -356,7 +334,7 @@ Paranoid::Network - Network functions for paranoid programs
 
 =head1 VERSION
 
-$Id: Network.pm,v 0.66 2011/12/08 07:53:07 acorliss Exp $
+$Id: Network.pm,v 0.67 2011/12/20 03:00:42 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -461,11 +439,7 @@ L<Paranoid>
 
 =item o
 
-L<Socket>
-
-=item o
-
-L<Socket6> (optional)
+L<Paranoid::Network::Socket>
 
 =back
 

@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Module.pm,v 0.81 2009/03/05 00:09:34 acorliss Exp $
+# $Id: Module.pm,v 0.82 2011/12/20 02:59:37 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -28,7 +28,7 @@ use Paranoid::Debug qw(:all);
 use Paranoid::Input;
 use Carp;
 
-($VERSION) = ( q$Revision: 0.81 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.82 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 @EXPORT      = qw(loadModule);
 @EXPORT_OK   = qw(loadModule);
@@ -41,7 +41,10 @@ use Carp;
 #####################################################################
 
 {
-    my %tested;    # Hash of module names => boolean (load success)
+    my %modules;    # List of modules compiled
+                    #       {modules} => boolean
+    my %imports;    # List of modules/tagsets imported from callers
+                    #       {module*tagset*caller} => boolean
 
     sub loadModule ($;@) {
 
@@ -54,10 +57,10 @@ use Carp;
         my $module = shift;
         my @args   = @_;
         my $rv     = 0;
-        my $a      = @args ? join ' ', @args : '';
+        my $a      = @args ? 'qw(' . ( join ' ', @args ) . ')' : '';
         my $caller = scalar caller;
         my $c      = defined $caller ? $caller : 'undef';
-        my $m;
+        my ( $m, $cm );
 
         croak 'Mandatory first argument must be a defined module name'
             unless defined $module;
@@ -65,59 +68,67 @@ use Carp;
         pdebug( "entering w/($module)($a)", PDLEVEL1 );
         pIn();
 
-        # Debug info
-        pdebug( "calling package: $c", PDLEVEL2 );
+        # Check to see if module has been loaded already
+        unless ( exists $modules{$module} ) {
 
-        # Detaint module name
-        if ( detaint( $module, 'filename', \$m ) ) {
-            $module = $m;
-        } else {
-            Paranoid::ERROR =
-                pdebug( 'failed to detaint module name' . " ($module)",
-                PDLEVEL1 );
-            $tested{$module} = 0;
-        }
-
-        # Skip if we've already done this
-        unless ( exists $tested{$module} ) {
-
-            # Try to load it
-            $tested{$module} = eval "require $module; 1;" ? 1 : 0;
-
-        }
-
-        # Try to import symbol sets if requested
-        if ( $tested{$module} && defined $caller ) {
-
-            if (@args) {
-
-                # Import requested symbol (sets)
-                eval << "EOF";
-{
-  package $caller;
-  import $module qw(@{[ join(' ', @args) ]});
-  1;
-}
-EOF
-
+            # First attempt at loading this module, so
+            # detaint and require
+            if ( detaint( $module, 'filename', \$m ) ) {
+                $module = $m;
             } else {
+                Paranoid::ERROR =
+                    pdebug( 'failed to detaint module name' . " ($module)",
+                    PDLEVEL1 );
+                $modules{$module} = 0;
+            }
 
-                # Import default symbols if no args passed
-                eval << "EOF";
-{
-  package $caller;
-  import $module;
-  1;
-}
-EOF
+            # Skip if the detainting failed
+            unless ( exists $modules{$module} ) {
+
+                # Try to load it
+                $modules{$module} = eval "require $module; 1;" ? 1 : 0;
+                pdebug( "attempted load of $module:  $modules{$module}",
+                    PDLEVEL2 );
+
             }
         }
 
+        # Define the module/tagset/caller
+        if (@args) {
+            $a = '()' if $a eq 'qw()';
+        } else {
+            $a = '';
+        }
+        $cm = "$module*$a*$caller";
+
+        # Check to see if this caller has imported these symbols
+        # before
+        if ( $modules{$module} ) {
+            if ( exists $imports{$cm} ) {
+
+                pdebug( "previous attempt to import to $caller", PDLEVEL2 );
+
+            } else {
+
+                pdebug( "importing symbols into $caller", PDLEVEL2 );
+                $imports{$cm} = eval << "EOF";
+{
+  package $caller;
+  import $module $a;
+  1;
+}
+EOF
+
+            }
+
+            $rv = $imports{$cm};
+        }
+
         pOut();
-        pdebug( "leaving w/rv: $tested{$module}", PDLEVEL1 );
+        pdebug( "leaving w/rv: $modules{$module}", PDLEVEL1 );
 
         # Return result
-        return $tested{$module};
+        return $modules{$module};
     }
 }
 
@@ -131,7 +142,7 @@ Paranoid::Module -- Paranoid Module Loading Routines
 
 =head1 VERSION
 
-$Id: Module.pm,v 0.81 2009/03/05 00:09:34 acorliss Exp $
+$Id: Module.pm,v 0.82 2011/12/20 02:59:37 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -142,7 +153,9 @@ $Id: Module.pm,v 0.81 2009/03/05 00:09:34 acorliss Exp $
 =head1 DESCRIPTION
 
 This provides a single function that allows you to do dynamic loading of
-modules at runtime.
+modules at runtime, along with importation of the exported symbol table.
+Specific functions and/or tag sets can be declared, just as you would in a
+normal B<use> or B<import> statement.
 
 =head1 SUBROUTINES/METHODS
 
@@ -152,8 +165,7 @@ modules at runtime.
 
 Accepts a module name and an optional list of arguments to 
 use with the import function.  Returns a true or false depending
-whether the require was successful.  We do not currently
-track the return value of the import function.
+whether the require was successful.
 
 =head1 DEPENDENCIES
 
@@ -170,6 +182,14 @@ L<Paranoid::Debug>
 =back
 
 =head1 BUGS AND LIMITATIONS
+
+The B<loadModule> cannot be used to require external files, it can only be
+used to load modules in the existing library path.  In addition, while we
+track what symbol sets (if any) were imported to the caller's name space the
+return value doesn't reflect the value of the B<import> method.  This is
+intentional because not every module out there offers a properly coded
+B<import> function or inherits it from L<Exporter(3)>).  The return value 
+from B<import> is ignored.
 
 =head1 AUTHOR
 

@@ -21,7 +21,7 @@ The following modules have optional dependencies:
 
   Module                           Dependencies
   ===========================================================
-  Paranoid::Network                Socket6
+  Paranoid::Network::Socket        Socket6
 
 You only need this installed if you wish to work with IPv6 networks in
 addition to IPv4.  If you're running Perl 5.14 or higher you don't need it

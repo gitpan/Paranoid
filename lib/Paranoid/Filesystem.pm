@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Filesystem.pm,v 0.19 2010/06/03 19:01:11 acorliss Exp $
+# $Id: Filesystem.pm,v 0.20 2011/12/20 02:45:21 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -33,7 +33,7 @@ use Paranoid::Process qw(ptranslateUser ptranslateGroup);
 use Paranoid::Input;
 use Paranoid::Glob;
 
-($VERSION) = ( q$Revision: 0.19 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.20 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 @EXPORT = qw(
     preadDir     psubdirs    pfiles    pglob
@@ -1224,7 +1224,7 @@ Paranoid::Filesystem - Filesystem Functions
 
 =head1 VERSION
 
-$Id: Filesystem.pm,v 0.19 2010/06/03 19:01:11 acorliss Exp $
+$Id: Filesystem.pm,v 0.20 2011/12/20 02:45:21 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -1404,7 +1404,7 @@ well as an associated value in the passed hash reference (in the latter
 calling incarnation).
 
 Two forms of the function call are supported, primarily for backward
-compatibility purposes.  The latter is the prefered incarnation.
+compatibility purposes.  The latter is the preferred incarnation.
 
 B<NOTE:> This function is now just a wrapper around L<Paranoid::Glob>.  It may
 be advantageous for you to use it directly in lieu of B<pglob>.

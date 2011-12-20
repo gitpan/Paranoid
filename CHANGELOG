@@ -1,6 +1,16 @@
 CHANGELOG
 
-v0.31 (2011/08/17)
+v0.32 (2011/12/19)
+==================
+--Added new wrapper module for simpler, more portable IPv6 support and 
+  checking (Paranoid::Network::Socket)
+--Modified Paranoid::Network to use Paranoid::Network::Socket, and removed 
+  Socket, Socket6, and Paranoid::Module dependencies
+--Improved Paranoid::Module to reduce the number of detaints, requires, 
+  and evals for high frequency calls
+--Improved debug output of Paranoid::Module
+
+v0.31 (2011/12/06)
 ==================
 --Use of cached file handles in Paranoid::Lockfile is now fork-safe
 --Use of open databases in Paranoid::BerkeleyDB is now fork-safe

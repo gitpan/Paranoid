@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Paranoid.pm,v 0.31 2011/12/08 07:36:31 acorliss Exp $
+# $Id: Paranoid.pm,v 0.32 2011/12/20 03:06:00 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -24,7 +24,7 @@ use warnings;
 use vars qw($VERSION @EXPORT @EXPORT_OK %EXPORT_TAGS);
 use base qw(Exporter);
 
-($VERSION) = ( q$Revision: 0.31 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.32 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 @EXPORT      = qw(psecureEnv);
 @EXPORT_OK   = qw(psecureEnv);
@@ -98,7 +98,7 @@ Paranoid - Paranoia support for safer programs
 
 =head1 VERSION
 
-$Id: Paranoid.pm,v 0.31 2011/12/08 07:36:31 acorliss Exp $
+$Id: Paranoid.pm,v 0.32 2011/12/20 03:06:00 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -213,6 +213,10 @@ L<Paranoid::Module>: Run-time module loading functions
 =item o
 
 L<Paranoid::Network>: Network-related functions
+
+=item o
+
+L<Paranoid::Network::Socket>: Wrapper module for Socket & Socket6
 
 =item o
 

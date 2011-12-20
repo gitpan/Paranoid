@@ -80,4 +80,6 @@ SKIP: {
 chmod 0755, './t/test_rm_noperms';
 ok( prmR( \%errors, './t/test_rm_noperms'), 'prmR 6' );
 
+system("rm -rf ./t/test_rm_noperms");
+
 # end 17_filesystem_prm.t
