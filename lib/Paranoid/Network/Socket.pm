@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Socket.pm,v 0.1 2011/12/20 02:42:27 acorliss Exp $
+# $Id: Socket.pm,v 0.2 2011/12/29 02:52:35 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -25,7 +25,7 @@ use vars qw($VERSION @EXPORT @EXPORT_OK %EXPORT_TAGS);
 use base qw(Exporter);
 use Socket qw(:all);
 
-($VERSION) = ( q$Revision: 0.1 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.2 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 #####################################################################
 #
@@ -50,9 +50,8 @@ BEGIN {
         );
 
     # Check to see if we've got any IPv6 functions available
-    no warnings 'once';
     $socket6 = 0;
-    $ipv6_enabled = ( defined *__PACKAGE__::sockaddr_in6{CODE} ) ? 1 : 0;
+    $ipv6_enabled = ( defined *sockaddr_in6{CODE} ) ? 1 : 0;
 
     # Set inet_pton/inet_ntop to import by default -- don't know why
     # this isn't done in Socket at all...
@@ -82,9 +81,12 @@ BEGIN {
                     push @{ $EXPORT_TAGS{all} }, $symbol;
                 }
             }
+        }
 
-            $ipv6_enabled = 1;
-            $socket6      = 1;
+        # Check on more time...
+        $ipv6_enabled = ( defined *sockaddr_in6{CODE} ) ? 1 : 0;
+        if ($ipv6_enabled) {
+            $socket6 = *sockaddr_in{PACKAGE} eq 'Socket6' ? 1 : 0;
         }
     }
 }
@@ -99,7 +101,7 @@ Paranoid::Network::Socket - Socket wrapper for seemless IPv6 support
 
 =head1 VERSION
 
-$Id: Socket.pm,v 0.1 2011/12/20 02:42:27 acorliss Exp $
+$Id: Socket.pm,v 0.2 2011/12/29 02:52:35 acorliss Exp $
 
 =head1 SYNOPSIS
 
