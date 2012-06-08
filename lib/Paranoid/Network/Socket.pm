@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Socket.pm,v 0.2 2011/12/29 02:52:35 acorliss Exp $
+# $Id: Socket.pm,v 0.3 2012/05/29 21:38:37 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -25,7 +25,7 @@ use vars qw($VERSION @EXPORT @EXPORT_OK %EXPORT_TAGS);
 use base qw(Exporter);
 use Socket qw(:all);
 
-($VERSION) = ( q$Revision: 0.2 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.3 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 #####################################################################
 #
@@ -83,7 +83,7 @@ BEGIN {
             }
         }
 
-        # Check on more time...
+        # Check one more time...
         $ipv6_enabled = ( defined *sockaddr_in6{CODE} ) ? 1 : 0;
         if ($ipv6_enabled) {
             $socket6 = *sockaddr_in{PACKAGE} eq 'Socket6' ? 1 : 0;
@@ -101,7 +101,7 @@ Paranoid::Network::Socket - Socket wrapper for seemless IPv6 support
 
 =head1 VERSION
 
-$Id: Socket.pm,v 0.2 2011/12/29 02:52:35 acorliss Exp $
+$Id: Socket.pm,v 0.3 2012/05/29 21:38:37 acorliss Exp $
 
 =head1 SYNOPSIS
 

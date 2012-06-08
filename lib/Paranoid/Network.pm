@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Network.pm,v 0.67 2011/12/20 03:00:42 acorliss Exp $
+# $Id: Network.pm,v 0.68 2012/05/29 21:38:19 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -25,25 +25,16 @@ use vars qw($VERSION @EXPORT @EXPORT_OK %EXPORT_TAGS);
 use base qw(Exporter);
 use Paranoid::Debug qw(:all);
 use Paranoid::Network::Socket;
+use Paranoid::Network::IPv4 qw(:all);
+use Paranoid::Network::IPv6 qw(:all);
 use Carp;
 
-($VERSION) = ( q$Revision: 0.67 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.68 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
-@EXPORT      = qw(ipInNetwork hostInDomain extractIPs);
-@EXPORT_OK   = qw(ipInNetwork hostInDomain extractIPs);
-%EXPORT_TAGS = ( all => [qw(ipInNetwork hostInDomain extractIPs)], );
-
-use constant CHUNK       => 32;
-use constant IPV6CHUNKS  => 4;
-use constant MAXIPV4CIDR => 32;
-use constant MAXIPV6CIDR => 128;
-use constant MASK        => 0xffffffff;
-use constant IP4REGEX    => qr/(?:\d{1,3}\.){3}\d{1,3}/sm;
-use constant IP6REGEX    => qr/
-                            :(?::[abcdef\d]{1,4}){1,7}                 | 
-                            [abcdef\d]{1,4}(?:::?[abcdef\d]{1,4}){1,7} | 
-                            (?:[abcdef\d]{1,4}:){1,7}:
-                            /smix;
+@EXPORT    = qw(ipInNetwork hostInDomain extractIPs netIntersect);
+@EXPORT_OK = qw(ipInNetwork hostInDomain extractIPs netIntersect);
+%EXPORT_TAGS =
+    ( all => [qw(ipInNetwork hostInDomain extractIPs netIntersect)], );
 
 #####################################################################
 #
@@ -59,176 +50,57 @@ sub ipInNetwork ($@) {
     # Usage:    $rv = ipInNetwork($ip, @networks);
 
     my $ip       = shift;
-    my @networks = @_;
+    my $i        = defined $ip ? $ip : 'undef';
+    my @networks = grep {defined} @_;
     my $rv       = 0;
-    my $oip      = $ip;
-    my ( $bip, $bnet, $bmask, $family, @tmp, $irv );
+    my ( $family, @tmp );
+
+    pdebug( "entering w/($i)(@networks)", PDLEVEL1 );
+    pIn();
 
     # Validate arguments
     if ( defined $ip ) {
 
-        # Test for an IPv4 address
-        if ( $ip =~ m/^@{[ IP4REGEX ]}$/smo and defined inet_aton($ip) ) {
-            $family = AF_INET();
+        # Extract IPv4 address from IPv6 encoding
+        $ip =~ s/^::ffff:(@{[ IPV4REGEX ]})$/$1/smio;
+
+        # Check for IPv6 support
+        if ( has_ipv6() or $] >= 5.012 ) {
+
+            pdebug( 'Found IPv4/IPv6 support', PDLEVEL2 );
+            $family =
+                  $ip =~ m/^@{[ IPV4REGEX ]}$/smo ? AF_INET()
+                : $ip =~ m/^@{[ IPV6REGEX ]}$/smo ? AF_INET6()
+                :                                   undef;
+
         } else {
 
-            # If Socket6 is present or we have Perl 5.14 or higher we'll check
-            # for IPv6 addresses
-            if ( has_ipv6() or $] >= 5.012 ) {
-
-                if ( defined inet_pton( AF_INET6(), $ip ) ) {
-
-                    # Convert IPv6-encoded IPv4 addresses to pure IPv4
-                    if ( $ip =~ m/^::ffff:(@{[ IP4REGEX ]})$/smio ) {
-                        $ip     = $1;
-                        $family = AF_INET();
-                    } else {
-                        $family = AF_INET6();
-                    }
-                } else {
-                    croak 'Mandatory first argument must be a '
-                        . 'defined IPv4/IPv6 address';
-                }
-            } else {
-                croak 'Mandatory first argument must be a valid IPv4 address';
-            }
+            pdebug( 'Found only IPv4 support', PDLEVEL2 );
+            $family = AF_INET()
+                if $ip =~ m/^@{[ IPV4REGEX ]}$/smo;
         }
-    } else {
-        croak 'Mandatory first argument must be a defined IP address';
     }
 
-    pdebug( "entering w/($oip)(@networks)", PDLEVEL1 );
-    pIn();
+    if ( defined $ip and defined $family ) {
 
-    # Filter out non-IP data from @networks
-    @networks = grep {
-        if ( defined $_
-            && m#^([\d\.]+|[abcdef\d:]+)(?:/(?:\d+|@{[ IP4REGEX ]}))?$#smio )
-        {
-            defined(
-                $family == AF_INET()
-                ? inet_aton($1)
-                : inet_pton( AF_INET6(), $1 ) );
-        }
-    } @networks;
-
-    # Start the comparisons
-    if (@networks) {
+        # Filter out non-family data from @networks
+        @networks = grep {
+            $family == AF_INET()
+                ? m#^@{[ IPV4CIDRRGX ]}$#smo
+                : m#^@{[ IPV6CIDRRGX ]}$#smo
+        } @networks;
 
         pdebug( "networks to compare: @{[ join ', ', @networks ]}",
             PDLEVEL2 );
 
-        # Convert IP to binary
-        $bip =
-            $family == AF_INET()
-            ? [ unpack 'N', inet_aton($ip) ]
-            : [ unpack 'NNNN', inet_pton( AF_INET6(), $ip ) ];
-
-        # Compare against all networks
+        # Start comparisons
         foreach (@networks) {
-
-            if ( $_ =~ m#^([^/]+)(?:/(.+))?$#sm ) {
-                ( $bnet, $bmask ) = ( $1, $2 );
-            }
-
-            # See if it's a network address
-            if ( defined $bmask and length $bmask ) {
-
-                # Get the netmask
-                if ( $family == AF_INET() ) {
-
-                    # Convert IPv4/CIDR notation to a binary number
-                    $bmask =
-                          ( $bmask =~ m/^\d+$/sm and $bmask <= MAXIPV4CIDR )
-                        ? [ MASK - ( ( 2**( CHUNK - $bmask ) ) - 1 ) ]
-                        : ( $bmask =~ m/^@{[ IP4REGEX ]}$/smo
-                            and defined inet_aton($ip) )
-                        ? [ unpack 'N', inet_aton($bmask) ]
-                        : undef;
-
-                } else {
-
-                    # Convert IPv6 CIDR notation to a binary number
-                    if ( $bmask =~ m/^\d+$/sm and $bmask <= MAXIPV6CIDR ) {
-
-                        # Add the mask in 32-bit chunks
-                        @tmp = ();
-                        while ( $bmask >= CHUNK ) {
-                            push @tmp, MASK;
-                            $bmask -= CHUNK;
-                        }
-
-                        # Push the final segment if there's a remainder
-                        if ($bmask) {
-                            push @tmp,
-                                MASK - ( ( 2**( CHUNK - $bmask ) ) - 1 );
-                        }
-
-                        # Add zero'd chunks to fill it out
-                        while ( @tmp < IPV6CHUNKS ) {
-                            push @tmp, 0x0;
-                        }
-
-                        # Finally, save the chunks
-                        $bmask = [@tmp];
-
-                    } else {
-                        $bmask = undef;
-                    }
-                }
-
-                # Skip if the netmask was invalid
-                next unless defined $bmask;
-
-                # Convert network address to binary
-                $bnet =
-                    $family == AF_INET()
-                    ? [ unpack 'N', inet_aton($bnet) ]
-                    : [ unpack 'NNNN', inet_pton( AF_INET6(), $bnet ) ];
-
-                # Start comparing our chunks
-                $irv = 1;
-                @tmp = @$bip;
-                while (@tmp) {
-                    unless ( ( $tmp[0] & $$bmask[0] ) ==
-                        ( $$bnet[0] & $$bmask[0] ) ) {
-                        $irv = 0;
-                        last;
-                    }
-                    shift @tmp;
-                    shift @$bnet;
-                    shift @$bmask;
-                }
-                if ($irv) {
-                    pdebug( "matched against $_", PDLEVEL2 );
-                    $rv = 1;
-                    last;
-                }
-
-            } else {
-
-                # Not a network address, so let's see if it's an exact match
-                $bnet =
-                    $family == AF_INET()
-                    ? [ unpack 'N', inet_aton($_) ]
-                    : [ unpack 'NNNN', inet_pton( AF_INET6(), $_ ) ];
-
-                # Do the comparison
-                $irv = 1;
-                @tmp = @$bip;
-                while (@tmp) {
-                    unless ( $tmp[0] == $$bnet[0] ) {
-                        $irv = 0;
-                        last;
-                    }
-                    shift @tmp;
-                    shift @$bnet;
-                }
-                if ($irv) {
-                    pdebug( "matched against $_", PDLEVEL2 );
-                    $rv = 1;
-                    last;
-                }
+            if ($family == AF_INET()
+                ? ipv4NetIntersect( $ip, $_ )
+                : ipv6NetIntersect( $ip, $_ )
+                ) {
+                $rv = 1;
+                last;
             }
         }
     }
@@ -291,7 +163,7 @@ sub extractIPs (@) {
     foreach $string (@strings) {
 
         # Look for IPv4 addresses
-        @ips = ( $string =~ /(@{[ IP4REGEX ]})/smog );
+        @ips = ( $string =~ /(@{[ IPV4REGEX ]})/smog );
 
         # Validate them by filtering through inet_aton
         foreach $ip (@ips) {
@@ -302,7 +174,7 @@ sub extractIPs (@) {
         # for IPv6 addresses
         if ( has_ipv6() or $] >= 5.012 ) {
 
-            @ips = ( $string =~ m/(@{[ IP6REGEX ]})/smogix );
+            @ips = ( $string =~ m/(@{[ IPV6REGEX ]})/smogix );
 
             # Filter out addresses with more than one ::
             @ips = grep { scalar(m/(::)/smg) <= 1 } @ips;
@@ -315,13 +187,55 @@ sub extractIPs (@) {
         }
     }
 
-    # Filter out IPv4 encoded as IPv6
-    @rv = grep !/^::ffff:@{[ IP4REGEX ]}$/smo, @rv;
-
     pOut();
     pdebug( "leaving w/rv: @rv)", PDLEVEL1 );
 
     return @rv;
+}
+
+sub netIntersect (@) {
+
+    # Purpose:  Tests whether network address ranges intersect
+    # Returns:  Integer, denoting whether an intersection exists, and what
+    #           kind:
+    #
+    #               -1: destination range encompasses target range
+    #                0: both ranges do not intersect at all
+    #                1: target range encompasses destination range
+    #
+    # Usage:    $rv = netIntersect( $cidr1, $cidr2 );
+
+    my $target = shift;
+    my $dest   = shift;
+    my $t      = defined $target ? $target : 'undef';
+    my $d      = defined $dest ? $dest : 'undef';
+    my $rv     = 0;
+
+    pdebug( "entering w/$t, $d", PDLEVEL1 );
+    pIn();
+
+    if ( defined $target and defined $dest ) {
+        if ( $target =~ m/^@{[ IPV4CIDRRGX ]}$/sm ) {
+            $rv = ipv4NetIntersect( $target, $dest );
+        } elsif ( $target =~ m/^@{[ IPV6CIDRRGX ]}$/smi ) {
+            $rv = ipv6NetIntersect( $target, $dest )
+                if has_ipv6()
+                    or $] >= 5.012;
+        } else {
+            pdebug(
+                "target string ($target) doesn't seem to match"
+                    . 'an IP/network address',
+                PDLEVEL1
+                );
+        }
+    } else {
+        pdebug( 'one or both arguments are not defined', PDLEVEL1 );
+    }
+
+    pOut();
+    pdebug( "leaving w/rv: $rv", PDLEVEL1 );
+
+    return $rv;
 }
 
 1;
@@ -334,14 +248,16 @@ Paranoid::Network - Network functions for paranoid programs
 
 =head1 VERSION
 
-$Id: Network.pm,v 0.67 2011/12/20 03:00:42 acorliss Exp $
+$Id: Network.pm,v 0.68 2012/05/29 21:38:19 acorliss Exp $
 
 =head1 SYNOPSIS
 
   use Paranoid::Network;
 
-  $rv = ipInNetwork($ip, @networks);
-  $rv = hostInDomain($host, @domains);
+  $rv  = ipInNetwork($ip, @networks);
+  $rv  = hostInDomain($host, @domains);
+  @ips = extractIP($string1, $string2);
+  $rv = netIntersect( $cidr1, $cidr2 );
 
 =head1 DESCRIPTION
 
@@ -429,6 +345,15 @@ B<NOTE:> Like the B<ipInNetwork> function we filter out IPv4 addresses encoded
 as IPv6 addresses since that address is already returned as a pure IPv4
 address.
 
+=head2 netIntersect
+
+  $rv = netIntersect( $cidr1, $cidr2 );
+
+This function is an IPv4/IPv6 agnostic wrapper for the B<ipv{4,6}NetIntersect>
+functions provided by L<Paranoid::Network::IPv{4,6}> modules.  The return
+value from which ever function called is passed on directly.  Passing this
+function non-IP or undefined values simply returns a zero.
+
 =head1 DEPENDENCIES
 
 =over
@@ -440,6 +365,14 @@ L<Paranoid>
 =item o
 
 L<Paranoid::Network::Socket>
+
+=item o
+
+L<Paranoid::Network::IPv4>
+
+=item o
+
+L<Paranoid::Network::IPv6>
 
 =back
 

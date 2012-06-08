@@ -21,6 +21,8 @@ lib/Paranoid/Log/File.pm
 lib/Paranoid/Log/Syslog.pm
 lib/Paranoid/Module.pm
 lib/Paranoid/Network.pm
+lib/Paranoid/Network/IPv4.pm
+lib/Paranoid/Network/IPv6.pm
 lib/Paranoid/Network/Socket.pm
 lib/Paranoid/Process.pm
 t/01_init_core.t
@@ -46,6 +48,8 @@ t/21_filesystem_pchmod.t
 t/22_filesystem_pchown.t
 t/23_filesystem_misc.t
 t/30_socket.t
+t/31_ipv4.t
+t/32_ipv6.t
 t/98_pod_coverage.t
 t/99_pod.t
 META.yml                                 Module meta-data (added by MakeMaker)

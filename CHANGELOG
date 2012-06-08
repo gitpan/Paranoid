@@ -1,5 +1,25 @@
 CHANGELOG
 
+v0.34 (2012/05/29)
+==================
+--Added Paranoid::Network::IPv4 & Paranoid::Network::IPv6 to provide 
+  general protocol-specific functions
+--Added ipv4NetConvert function to convert IPv4 IPs to native integer 
+  format, and network ranges to base, broadcast, and netmasks in 
+  native integer format
+--Added ipv6NetConvert function to convert IPv6 IPs to 32bit integer 
+  arrays, and network ranges to base, broadcast, and netmasks in 
+  32bit integer arrays
+--Added ipv4NetIntersect function to test whether two IPv4 IP/network 
+  address ranges intersect
+--Added ipv6NetIntersect function to test whether two IPv6 IP/network 
+  address ranges intersect
+--Reworked Paranoid::Network to make use of IPv4/IPv6 modules for 
+  use in ipInNetwork
+--Added netIntersect to Paranoid::Network, which is an IPv4/IPv6-
+  agnostic wrapper for the related functions in the IPv4/IPv6 modules
+--Typo fixed in Paranoid::Network::Socket documentation
+
 v0.33 (2011/12/29)
 ==================
 --Detection of imported symbols in the local namespace wasn't working

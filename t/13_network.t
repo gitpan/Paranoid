@@ -1,7 +1,7 @@
 #!/usr/bin/perl -T
 # 13_network.t
 
-use Test::More tests => 26;
+use Test::More tests => 32;
 use Paranoid;
 use Paranoid::Network;
 use Paranoid::Module;
@@ -64,9 +64,15 @@ ok( scalar( grep !/:/, extractIPs($iproute) == 6 ),  'extractIPs 2' );
 ok( scalar( grep !/:/, extractIPs( $ifconfig, $iproute ) == 9 ),
     'extractIPs 3' );
 
+is( netIntersect(qw(192.168.0.0/24 192.168.0.128/25)), 1, 'netIntersect 1' );
+is( netIntersect(qw(192.168.0.128/25 192.168.0.128/24)),
+    -1, 'netIntersect 2' );
+is( netIntersect(qw(192.168.0.0/24 foo)), 0, 'netIntersect 7' );
+
 SKIP: {
-    skip( 'Missing IPv6 support -- skipping IPv6 tests', 12 )
-        unless $] >= 5.012 or loadModule('Socket6');
+    skip( 'Missing IPv6 support -- skipping IPv6 tests', 15 )
+        unless $] >= 5.012
+            or loadModule('Socket6');
 
     ok( ipInNetwork( '::1', '::1' ), 'ipInNetwork 7' );
     ok( !ipInNetwork( '::1', '127.0.0.1/8' ), 'ipInNetwork 8' );
@@ -93,6 +99,17 @@ SKIP: {
     ok( scalar extractIPs($ifconfig) == 3, 'extractIPs 4' );
     ok( scalar extractIPs($iproute) == 6,  'extractIPs 5' );
     ok( scalar extractIPs( $ifconfig, $iproute ) == 9, 'extractIPs 6' );
+
+    is( netIntersect(qw(fe80::212:e9dd:fed9:a1f9 fe80::/64)),
+        -1, 'netIntersect 1' );
+    is( netIntersect(
+            qw(fe80::/64
+                fe80::212:e9dd:fed9:a1f9)
+            ),
+        1,
+        'netIntersect 2'
+        );
+    is( netIntersect(qw(bar foo)), 0, 'netIntersect 8' );
 }
 
 # end 13_network.t
