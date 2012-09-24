@@ -2,7 +2,7 @@
 #
 # (c) 2012, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: IPv4.pm,v 0.1 2012/05/29 21:37:44 acorliss Exp $
+# $Id: IPv4.pm,v 0.2 2012/09/24 22:47:01 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -27,13 +27,20 @@ use Paranoid::Debug qw(:all);
 use Paranoid::Network::Socket;
 use Carp;
 
-($VERSION) = ( q$Revision: 0.1 $ =~ /(\d+(?:\.(\d+))+)/sm );
-@EXPORT    = qw(ipv4NetConvert ipv4NetIntersect);
-@EXPORT_OK = (
-    @EXPORT,
-    qw(MAXIPV4CIDR IPV4REGEX IPV4CIDRRGX IPV4BASE IPV4BRDCST IPV4MASK)
+my @base      = qw(ipv4NetConvert ipv4NetIntersect);
+my @constants = qw(MAXIPV4CIDR IPV4REGEX IPV4CIDRRGX IPV4BASE IPV4BRDCST
+    IPV4MASK);
+my @ipv4sort = qw(ipv4NumSort ipv4StrSort ipv4PackedSort);
+
+($VERSION) = ( q$Revision: 0.2 $ =~ /(\d+(?:\.(\d+))+)/sm );
+@EXPORT      = @base;
+@EXPORT_OK   = ( @base, @constants, @ipv4sort );
+%EXPORT_TAGS = (
+    all       => [@EXPORT_OK],
+    base      => [@base],
+    constants => [@constants],
+    ipv4Sort  => [@ipv4sort],
     );
-%EXPORT_TAGS = ( all => [@EXPORT_OK] );
 
 use constant MAXIPV4CIDR => 32;
 use constant IPV4REGEX   => qr/(?:\d{1,3}\.){3}\d{1,3}/sm;
@@ -179,6 +186,55 @@ sub ipv4NetIntersect (@) {
     return $rv;
 }
 
+{
+
+    no strict 'refs';
+
+    sub ipv4NumSort {
+
+        # Purpose:  Sorts IPv4 addresses represented in numeric form
+        # Returns:  -1, 0, 1
+        # Usage:    @sorted = sort &ipv4NumSort @ipv4;
+
+        my ($pkg) = caller;
+
+        return ${"${pkg}::a"} <=> ${"${pkg}::b"};
+    }
+
+    sub ipv4PackedSort {
+
+        # Purpose:  Sorts IPv4 addresses represented in packed strings
+        # Returns:  -1, 0, 1
+        # Usage:    @sorted = sort &ipv4PackedSort @ipv4;
+
+        my ($pkg) = caller;
+
+        my $a1 = unpack 'N', ${"${pkg}::a"};
+        my $b1 = unpack 'N', ${"${pkg}::b"};
+
+        return $a1 <=> $b1;
+    }
+
+    sub ipv4StrSort {
+
+        # Purpose:  Sorts IPv4 addresses represented in string form
+        # Returns:  -1, 0, 1
+        # Usage:    @sorted = sort &ipv4StrSort @ipv4;
+
+        my ($pkg) = caller;
+
+        my $a1 = ${"${pkg}::a"};
+        my $b1 = ${"${pkg}::b"};
+
+        $a1 =~ s#/.+##sm;
+        $a1 = unpack 'N', inet_aton($a1);
+        $b1 =~ s#/.+##sm;
+        $b1 = unpack 'N', inet_aton($b1);
+
+        return $a1 <=> $b1;
+    }
+}
+
 1;
 
 __END__
@@ -189,7 +245,7 @@ Paranoid::Network::IPv4 - IPv4-related functions
 
 =head1 VERSION
 
-$Id: IPv4.pm,v 0.1 2012/05/29 21:37:44 acorliss Exp $
+$Id: IPv4.pm,v 0.2 2012/09/24 22:47:01 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -207,13 +263,26 @@ or
     @net = ipv4NetConvert($netAddr);
     $broadcast = $net[IPV4BRDCST];
 
+    use Paranoid::Network::IPv4 qw(:ipv4Sort);
+
+    @nets = sort ipv4StrSort    @nets;
+    @nets = sort ipv4PackedSort @nets;
+    @nets = sort ipv4NumSort    @nets;
+
 =head1 DESCRIPTION
 
 This module contains a few convenience functions for working with IPv4
 addresses.
 
-By default only the subroutines themselves are imported.  Requesting B<:all>
-will also import the constants as well.
+By default only B<ipv4NetConvert> and B<ipv4NetIntersect> are imported.  
+Other symbol sets are:
+
+    Name        Description
+    ---------------------------------------------
+    all         all functions/constants
+    base        default exported functions
+    constants   constants
+    ipv4Sort    sort functions
 
 =head1 SUBROUTINES/METHODS
 
@@ -247,6 +316,31 @@ to indicate which is a subset of the other:
 
 The function handles the same string formats as B<ipv4NetConvert>, but will
 allow you to test single IPs in integer format as well.
+
+=head2 ipv4StrSort
+
+    @sorted = sort ipv4StrSort @nets;
+
+This function allows IPv4 addresses and networks to be passed in string
+format.  Networks can be in CIDR format.  Sorts in ascending order.
+
+=head2 ipv4PackedSort
+
+    @sorted = sort ipv4PackedSort @nets;
+
+This function sorts IPv4 addresses as returned by L<inet_aton>.  Sorts in
+ascending order.
+
+=head2 ipv4NumSort
+
+    @sorted = sort ipv4NumSort @nets;
+
+This function is rather pointless, but is included merely for completeness.
+Addresses are in unpacked, native integer format, such as one gets from:
+
+    $ip = unpack 'N', inet_aton($ipAddr);
+
+Sorts in ascending order.
 
 =head1 CONSTANTS
 

@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Args.pm,v 0.22 2010/04/15 23:23:28 acorliss Exp $
+# $Id: Args.pm,v 0.23 2012/09/24 22:43:12 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -27,7 +27,7 @@ use Carp;
 use Paranoid;
 use Paranoid::Debug qw(:all);
 
-($VERSION) = ( q$Revision: 0.22 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.23 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 @EXPORT      = qw(parseArgs);
 @EXPORT_OK   = qw(parseArgs);
@@ -872,11 +872,11 @@ __END__
 
 =head1 NAME
 
-Paranoid::Args - Command-linne argument parsing functions
+Paranoid::Args - Command-line argument parsing functions
 
 =head1 VERSION
 
-$Id: Args.pm,v 0.22 2010/04/15 23:23:28 acorliss Exp $
+$Id: Args.pm,v 0.23 2012/09/24 22:43:12 acorliss Exp $
 
 =head1 SYNOPSIS
 

@@ -2,7 +2,7 @@
 #
 # (c) 2012, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: IPv6.pm,v 0.1 2012/05/29 21:37:44 acorliss Exp $
+# $Id: IPv6.pm,v 0.3 2012/09/24 23:20:22 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -27,15 +27,22 @@ use Paranoid::Debug qw(:all);
 use Paranoid::Network::Socket;
 use Carp;
 
-($VERSION) = ( q$Revision: 0.1 $ =~ /(\d+(?:\.(\d+))+)/sm );
-@EXPORT    = qw(ipv6NetConvert ipv6NetPacked ipv6NetIntersect);
-@EXPORT_OK = (
-    @EXPORT,
-    qw(MAXIPV6CIDR IPV6REGEX IPV6CIDRRGX IPV6BASE IPV6BRDCST IPV6MASK)
-    );
-%EXPORT_TAGS = ( all => [@EXPORT_OK] );
+my @base      = qw(ipv6NetConvert ipv6NetPacked ipv6NetIntersect);
+my @constants = qw(MAXIPV6CIDR IPV6REGEX IPV6CIDRRGX IPV6BASE IPV6BRDCST
+    IPV6MASK);
+my @ipv6sort = qw(ipv6StrSort ipv6PackedSort ipv6NumSort);
 
-use constant MAXIPV6CIDR => 64;
+($VERSION) = ( q$Revision: 0.3 $ =~ /(\d+(?:\.(\d+))+)/sm );
+@EXPORT      = @base;
+@EXPORT_OK   = ( @base, @constants, @ipv6sort );
+%EXPORT_TAGS = (
+    all       => [@EXPORT_OK],
+    base      => [@base],
+    constants => [@constants],
+    ipv6Sort  => [@ipv6sort],
+    );
+
+use constant MAXIPV6CIDR => 128;
 use constant IPV6REGEX   => qr/
                             :(?::[abcdef\d]{1,4}){1,7}                 | 
                             [abcdef\d]{1,4}(?:::?[abcdef\d]{1,4}){1,7} | 
@@ -74,7 +81,7 @@ sub ipv6NetConvert ($) {
     pdebug( "entering w/$n", PDLEVEL1 );
     pIn();
 
-    if ( has_ipv6() or $] >= 5.012) {
+    if ( has_ipv6() or $] >= 5.012 ) {
 
         # Extract net address, mask
         if ( defined $netAddr ) {
@@ -124,13 +131,13 @@ sub ipv6NetConvert ($) {
                     if ( defined $bmask ) {
 
                         # Apply the mask to the base address
-                        foreach ( 0 .. (IPV6CHUNKS - 1)) {
+                        foreach ( 0 .. ( IPV6CHUNKS - 1 ) ) {
                             $$bnet[$_] &= $$bmask[$_];
                         }
 
                         # Calculate and save our broadcast address
                         @tmp = ();
-                        foreach ( 0 .. (IPV6CHUNKS - 1)) {
+                        foreach ( 0 .. ( IPV6CHUNKS - 1 ) ) {
                             $tmp[$_] =
                                 $$bnet[$_] | ( $$bmask[$_] ^ CHUNKMASK );
                         }
@@ -282,6 +289,67 @@ sub ipv6NetIntersect (@) {
     return $rv;
 }
 
+{
+
+    no strict 'refs';
+
+    sub ipv6NumSort {
+
+        # Purpose:  Sorts IPv6 addresses represented in numeric form
+        # Returns:  -1, 0, 1
+        # Usage:    @sorted = sort &ipv6NumSort @ipv4;
+
+        my ($pkg) = caller;
+        my ( $i, $rv );
+
+        foreach $i ( 0 .. 3 ) {
+            $rv = $${"${pkg}::a"}[$i] <=> $${"${pkg}::b"}[$i];
+            last if $rv;
+        }
+
+        return $rv;
+    }
+
+    sub ipv6PackedSort {
+
+        # Purpose:  Sorts IPv6 addresses represented by packed strings
+        # Returns:  -1, 0, 1
+        # Usage:    @sorted = sort &ipv6PackedSort @ipv6;
+
+        no warnings 'once';
+
+        my ($pkg) = caller;
+        $a = [ unpack 'NNNN', ${"${pkg}::a"} ];
+        $b = [ unpack 'NNNN', ${"${pkg}::b"} ];
+
+        return ipv6NumSort();
+    }
+
+    sub ipv6StrSort {
+
+        # Purpose:  Sorts IPv6 addresses represented in string form
+        # Returns:  -1, 0, 1
+        # Usage:    @sorted = sort &ipv4StrSort @ipv4;
+
+        my ($pkg) = caller;
+        my $a1    = ${"${pkg}::a"};
+        my $b1    = ${"${pkg}::b"};
+        my ( $i, $rv );
+
+        $a1 =~ s#/.+##sm;
+        $a1 = [ unpack 'NNNN', inet_pton( AF_INET6(), $a1 ) ];
+        $b1 =~ s#/.+##sm;
+        $b1 = [ unpack 'NNNN', inet_pton( AF_INET6(), $b1 ) ];
+
+        foreach $i ( 0 .. 3 ) {
+            $rv = $$a1[$i] <=> $$b1[$i];
+            last if $rv;
+        }
+
+        return $rv;
+    }
+}
+
 1;
 
 __END__
@@ -292,17 +360,44 @@ Paranoid::Network::IPv6 - IPv6-related functions
 
 =head1 VERSION
 
-$Id: IPv6.pm,v 0.1 2012/05/29 21:37:44 acorliss Exp $
+$Id: IPv6.pm,v 0.3 2012/09/24 23:20:22 acorliss Exp $
 
 =head1 SYNOPSIS
+
+    use Paranoid::Network::IPv6;
+
+    @net = ipv6NetConvert($netAddr);
+    $rv = ipv6NetIntersect($net1, $net2);
+
+or 
+
+    use Paranoid::Network::IPv6 qw(:all);
+
+    print "Valid IP address\n" if $netAddr =~ /^@{[ IPV6REGEX ]}$/;
+
+    @net = ipv6NetConvert($netAddr);
+    $broadcast = $net[IPV6BRDCST];
+
+    use Paranoid::Network::IPv6 qw(:ipv6Sort);
+
+    @nets = sort ipv6StrSort    @nets;
+    @nets = sort ipv6PackedSort @nets;
+    @nets = sort ipv6NumSort    @nets;
 
 =head1 DESCRIPTION
 
 This module contains a few convenience functions for working with IPv6
 addresses.
 
-By default only the subroutines themselves are imported.  Requesting B<:all>
-will also import the constants as well.
+By default only B<ipv6NetConvert>, B<ipv6NetPacked>, and 
+B<ipv4NetIntersect> are imported.  Other symbol sets are:
+
+    Name        Description
+    ---------------------------------------------
+    all         all functions/constants
+    base        default exported functions
+    constants   constants
+    ipv6Sort    sort functions
 
 =head1 SUBROUTINES/METHODS
 
@@ -349,13 +444,39 @@ to indicate which is a subset of the other:
 The function handles the same string formats as B<ipv6NetConvert>, but will
 allow you to test single IPs in integer format as well.
 
+=head2 ipv6StrSort
+
+    @sorted = sort ipv6StrSort @nets;
+
+This function allows IPv6 addresses and networks to be passed in string
+format.  Networks can be in CIDR format.  Sorts in ascending order.
+:w
+
+=head2 ipv6PackedSort
+
+    @sorted = sort ipv6PackedSort @nets;
+
+This function sorts addresses that are in packed format, such as returned by
+L<inet_pton>.  Sorts in ascending order. 
+
+=head2 ipv6NumSort
+
+    @sorted = sort ipv6NumSort @nets;
+
+This function sorts addresses that are in unpacked, native integer format, such
+as one gets from:
+
+    @ip = unpack 'NNNN', inet_pton(AF_INET6, $ipAddr);
+
+Sorts in ascending order.  List of addresses should be a list of lists.
+
 =head1 CONSTANTS
 
 These are only imported if explicity requested or with the B<:all> tag.
 
 =head2 MAXIPV6CIDR
 
-Simply put: 64.  This is the largest CIDR notation supported in IPv6.
+Simply put: 128.  This is the largest CIDR notation supported in IPv6.
 
 =head2 IPV6REGEX
 

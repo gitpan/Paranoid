@@ -1,7 +1,7 @@
 #!/usr/bin/perl -T
 # 31_ipv6.t
 
-use Test::More tests => 22;
+use Test::More tests => 31;
 use Paranoid;
 use Paranoid::Debug;
 use Paranoid::Network::IPv6 qw(:all);
@@ -18,7 +18,7 @@ my ( @net, $rv );
 
 SKIP: {
 
-    skip( 'Missing IPv6 support -- skipping IPv6 tests', 22 )
+    skip( 'Missing IPv6 support -- skipping IPv6 tests', 31 )
         unless has_ipv6();
 
     # Test ffff:ffff:ffff::/64 conversion
@@ -93,6 +93,27 @@ SKIP: {
     my @p = ipv6NetPacked('ff::1');
     is( $p[0], pack( 'NNNN', @{ $net[0] } ), 'netPacked 1' );
 
+    # Test IPv6 string sort
+    my @nets = qw( fe80::8d46 a2e0:f4::3/64 ::1/128 );
+    my @sorted = sort ipv6StrSort @nets;
+    is( $sorted[0], '::1/128',          'ipv6StrSort 1' );
+    is( $sorted[1], 'a2e0:f4::3/64',    'ipv6StrSort 2' );
+    is( $sorted[2], 'fe80::8d46',       'ipv6StrSort 3' );
+
+    # Test IPv6 packed sort
+    foreach (@nets) { $_ =~ s#/\d+$## }; #
+    foreach (@nets) { $_ = inet_pton( AF_INET6(), $_ ) };
+    @sorted = sort ipv6PackedSort @nets;
+    is( $sorted[0], $nets[2],        'ipv6PackedSort 1' );
+    is( $sorted[1], $nets[1],        'ipv6PackedSort 2' );
+    is( $sorted[2], $nets[0],        'ipv6PackedSort 3' );
+
+    # Test IPv6 num sort
+    foreach (@nets) { $_ = [ unpack 'NNNN', $_ ] };
+    @sorted = sort ipv6NumSort @nets;
+    is( $sorted[0], $nets[2],        'ipv6PackedSort 1' );
+    is( $sorted[1], $nets[1],        'ipv6PackedSort 2' );
+    is( $sorted[2], $nets[0],        'ipv6PackedSort 3' );
 }
 
 # end 31_ipv6.t

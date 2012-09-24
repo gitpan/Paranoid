@@ -2,7 +2,7 @@
 #
 # (c) 2005, Arthur Corliss <corliss@digitalmages.com>
 #
-# $Id: Network.pm,v 0.68 2012/05/29 21:38:19 acorliss Exp $
+# $Id: Network.pm,v 0.69 2012/09/24 22:44:18 acorliss Exp $
 #
 #    This software is licensed under the same terms as Perl, itself.
 #    Please see http://dev.perl.org/licenses/ for more information.
@@ -29,7 +29,7 @@ use Paranoid::Network::IPv4 qw(:all);
 use Paranoid::Network::IPv6 qw(:all);
 use Carp;
 
-($VERSION) = ( q$Revision: 0.68 $ =~ /(\d+(?:\.(\d+))+)/sm );
+($VERSION) = ( q$Revision: 0.69 $ =~ /(\d+(?:\.(\d+))+)/sm );
 
 @EXPORT    = qw(ipInNetwork hostInDomain extractIPs netIntersect);
 @EXPORT_OK = qw(ipInNetwork hostInDomain extractIPs netIntersect);
@@ -248,7 +248,7 @@ Paranoid::Network - Network functions for paranoid programs
 
 =head1 VERSION
 
-$Id: Network.pm,v 0.68 2012/05/29 21:38:19 acorliss Exp $
+$Id: Network.pm,v 0.69 2012/09/24 22:44:18 acorliss Exp $
 
 =head1 SYNOPSIS
 
@@ -257,14 +257,14 @@ $Id: Network.pm,v 0.68 2012/05/29 21:38:19 acorliss Exp $
   $rv  = ipInNetwork($ip, @networks);
   $rv  = hostInDomain($host, @domains);
   @ips = extractIP($string1, $string2);
-  $rv = netIntersect( $cidr1, $cidr2 );
+  $rv  = netIntersect( $cidr1, $cidr2 );
 
 =head1 DESCRIPTION
 
-This modules contains functions that may be useful for network operations.
-IPv6 is supported out of the box starting with Perl 5.14.  Earlier versions of
-Perl will require L<Socket6(3)> installed as well.  If it is available this
-module will use it automatically.
+This modules contains functions that may be useful for working with network
+data.  It attempts to be IPv4/IPv6 agnostic, assuming IPv6 support is present.
+Due to the gradual introduction of IPv6 support into Perl there may be
+caveats.  Please consult L<Paranoid::Network::Socket> for more details.
 
 =head1 SUBROUTINES/METHODS
 
@@ -272,19 +272,18 @@ module will use it automatically.
 
   $rv = ipInNetwork($ip, @networks);
 
-This function checks the passed IP against each of the networks 
-or IPs in the list and returns true if there's a match.  The list of networks
-can be either individual IP address or network addresses in CIDR notation or
-with full netmasks:
+This function checks the passed IP (in string format) against each of the 
+networks or IPs in the list and returns true if there's a match.  The list of 
+networks can be either individual IP address or network addresses in CIDR 
+notation or with full netmasks:
 
   @networks = qw(127.0.0.1 
                  192.168.0.0/24 
                  172.16.12.0/255.255.240.0);
 
-IPv6 is supported if the L<Socket6(3)> module is installed or you're running
-Perl 5.14 or higher.  This routine will select the appropriate address family 
-based on the IP you're testing and filter out the opposing address family in 
-the list.
+You can safely comingle IPv4 & IPv6 addresses in the list to check against.
+Addresses not belonging to the same address family as the IP being tested will
+be ignored.
 
 B<NOTE:>  IPv4 addresses encoded as IPv6 addresses, e.g.:
 
@@ -327,10 +326,11 @@ domains should have the preceding '.' (i.e., 'foo.com' rather than
 
     @ips = extractIP($string1, $string2);
 
-This function extracts IP addresses from arbitrary text.  If you have
-L<Socket6(3)> installed or running Perl 5.14 or higher it will extract 
-IPv6 addresses as well as IPv4 addresses.  This extracts only IP 
-addresses, not network addresses in CIDR or dotted octet
+This function extracts IPv4/IPv6 addresses from arbitrary text.  IPv6 support
+is contingent upon the presence of proper support (please see
+L<Paranoid::Network::Socket> for more details).
+
+This extracts only IP addresses, not network addresses in CIDR or dotted octet
 notation.  In the case of the latter the netmask will be extracted as an
 additional address.
 

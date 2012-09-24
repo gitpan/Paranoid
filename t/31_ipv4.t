@@ -1,7 +1,7 @@
 #!/usr/bin/perl -T
 # 31_ipv4.t
 
-use Test::More tests => 23;
+use Test::More tests => 32;
 use Paranoid;
 use Paranoid::Debug;
 use Paranoid::Network::IPv4 qw(:all);
@@ -69,5 +69,37 @@ is( ipv4NetIntersect(qw(bar foo)), 0, 'netIntersect 8' );
 
 # Test intersection of bar and undef
 is( ipv4NetIntersect(qw(bar), 'undef'), 0, 'netIntersect 9' );
+
+# Test str sort
+my @nets = qw( 127.0.0.1 192.168.0.0/16 10.1.25.30 );
+my @sorted = sort ipv4StrSort @nets;
+is( $sorted[0], '10.1.25.30',     'ipv4StrSort 1' );
+is( $sorted[1], '127.0.0.1',      'ipv4StrSort 2' );
+is( $sorted[2], '192.168.0.0/16', 'ipv4StrSort 3' );
+
+package foo;
+use Test::More;
+use Paranoid::Network::Socket;
+use Paranoid::Network::IPv4 qw(:all);
+
+# Test packed sort
+$nets[1] =~ s#/\d+$##; #
+foreach (@nets) { $_ = inet_aton($_) };
+@sorted = sort ipv4PackedSort @nets;
+is( $sorted[0], $nets[2],         'ipv4PackedSort 1' );
+is( $sorted[1], $nets[0],         'ipv4PackedSort 2' );
+is( $sorted[2], $nets[1],         'ipv4PackedSort 3' );
+
+package bar;
+use Test::More;
+use Paranoid::Network::Socket;
+use Paranoid::Network::IPv4 qw(:all);
+
+# Test num sort
+foreach (@nets) { $_ = unpack 'N', $_ };
+@sorted = sort ipv4NumSort @nets;
+is( $sorted[0], $nets[2],        'ipv4NumSort 1' );
+is( $sorted[1], $nets[0],        'ipv4NumSort 2' );
+is( $sorted[2], $nets[1],        'ipv4NumSort 3' );
 
 # end 31_ipv4.t

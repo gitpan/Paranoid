@@ -1,5 +1,13 @@
 CHANGELOG
 
+v0.36 (2012/09/24)
+==================
+--Documentation updates
+--Added IPv4/6 sorting functions, supporting string, packed, and 
+  integer formats
+--Fixed MAXIPV6CIDR constant to 128
+--Fixed bare words warnings in Perl 5.6 for IPv6 modules
+
 v0.34 (2012/05/29)
 ==================
 --Added Paranoid::Network::IPv4 & Paranoid::Network::IPv6 to provide 

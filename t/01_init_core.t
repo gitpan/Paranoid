@@ -1,7 +1,7 @@
 #!/usr/bin/perl -T
 # 01_init_core.t
 
-use Test::More tests => 14;
+use Test::More tests => 17;
 
 use strict;
 use warnings;
@@ -15,6 +15,12 @@ ok( eval 'require Paranoid::Lockfile;',   'Loaded Paranoid::Lockfile' );
 ok( eval 'require Paranoid::Log;',        'Loaded Paranoid::Lockfile' );
 ok( eval 'require Paranoid::Module;',     'Loaded Paranoid::Module' );
 ok( eval 'require Paranoid::Network;',    'Loaded Paranoid::Network' );
+ok( eval 'require Paranoid::Network::Socket;',  
+                                          'Loaded Paranoid::Network::Socket' );
+ok( eval 'require Paranoid::Network::IPv4;', 
+                                          'Loaded Paranoid::Network::IPv4' );
+ok( eval 'require Paranoid::Network::IPv6;', 
+                                          'Loaded Paranoid::Network::IPv6' );
 ok( eval 'require Paranoid::Process;',    'Loaded Paranoid::Process' );
 
 eval 'Paranoid->import;';
